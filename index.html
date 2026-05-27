@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>RuttPlaneraren - Budbilsnavigering</title>
+  
+  <!-- SEO & PWA Meta -->
+  <meta name="description" content="Det intelligenta ruttplaneringsverktyget för budbilschaufförer. Optimera stopp, skanna fraktsedlar och kör rutter sömlöst.">
+  <meta name="theme-color" content="#0B0F19">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="assets/icon.svg">
+  
+  <!-- Premium Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Leaflet CSS for Map -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  
+  <!-- Main Stylesheet -->
+  <link rel="stylesheet" href="styles.css?v=22">
+  
+  <!-- Icons via Lucide (modern icon library) -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+
+  <!-- App Header -->
+  <header class="app-header">
+    <div class="header-logo">
+      <div class="logo-icon-wrapper">
+        <i data-lucide="truck" class="logo-icon"></i>
+      </div>
+      <div>
+        <h1>RuttMästaren</h1>
+        <p class="subtitle">Smart budbilsnavigering</p>
+      </div>
+    </div>
+    
+    <div class="header-actions">
+      <!-- PWA Install Button (will show when install is available) -->
+      <button id="install-btn" class="btn btn-secondary btn-icon-only hide" title="Installera App">
+        <i data-lucide="download"></i>
+        <span class="btn-text">Installera</span>
+      </button>
+      
+      <!-- Force Update & Clear Cache Button -->
+      <button id="clear-cache-btn" class="btn btn-secondary" title="Hämta senaste uppdateringen">
+        <i data-lucide="refresh-cw"></i>
+        <span>UPPDATERA</span>
+      </button>
+      
+      <!-- Driving HUD Toggle -->
+      <button id="toggle-hud-btn" class="btn btn-hud-trigger">
+        <i data-lucide="navigation"></i>
+        <span>KÖR LÄGE</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Tab Navigation Bar -->
+  <nav class="tabs-navigation-bar">
+    <button class="tab-nav-btn active" data-tab="planering">
+      <i data-lucide="map"></i>
+      <span>RUTTPLANERING</span>
+    </button>
+    <button class="tab-nav-btn" data-tab="lastlista">
+      <i data-lucide="package"></i>
+      <span>LASTLISTA (LIFO)</span>
+    </button>
+    <button class="tab-nav-btn" data-tab="korlage">
+      <i data-lucide="navigation"></i>
+      <span>KÖRLÄGE</span>
+    </button>
+  </nav>
+
+  <!-- Main Container -->
+  <main class="app-container">
+    
+    <!-- Left Column: Route Setup & Planering View -->
+    <section id="planering-panel" class="controls-panel tab-content-view active">
+      
+      <!-- Dashboard & Stats -->
+      <div class="glass-card stats-dashboard">
+        <div class="progress-bar-container">
+          <div class="progress-info">
+            <span class="progress-label"><i data-lucide="package-check"></i> Leveransstatus</span>
+            <span id="progress-text" class="progress-val">0 / 0 stopp (0%)</span>
+          </div>
+          <div class="progress-track">
+            <div id="progress-bar" class="progress-fill" style="width: 0%"></div>
+          </div>
+        </div>
+        
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon-wrapper time-icon"><i data-lucide="clock"></i></div>
+            <div class="stat-info">
+              <span class="stat-label">TOTAL TID</span>
+              <span id="stat-total-time" class="stat-value">0 min</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon-wrapper drive-icon"><i data-lucide="route"></i></div>
+            <div class="stat-info">
+              <span class="stat-label">KÖRTID</span>
+              <span id="stat-drive-time" class="stat-value">0 min</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon-wrapper work-icon"><i data-lucide="box"></i></div>
+            <div class="stat-info">
+              <span class="stat-label">STOPPTID</span>
+              <span id="stat-work-time" class="stat-value">0 min</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon-wrapper dist-icon"><i data-lucide="map-pin"></i></div>
+            <div class="stat-info">
+              <span class="stat-label">DISTANS</span>
+              <span id="stat-distance" class="stat-value">0 km</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="eta-banner">
+          <i data-lucide="calendar"></i>
+          <span>Sluttid: <strong id="stat-eta">Inga stopp</strong></span>
+        </div>
+      </div>
+      
+      <!-- Warehouse Card -->
+      <div class="glass-card warehouse-card">
+        <div class="card-header">
+          <h2><i data-lucide="warehouse" class="text-warning"></i> Lagret (Start & Slut)</h2>
+          <button id="edit-warehouse-btn" class="btn btn-text-only" title="Ändra lageradress">Ändra</button>
+        </div>
+        <div id="warehouse-display" class="warehouse-address">
+          <i data-lucide="map-pin"></i>
+          <span id="warehouse-address-text">Ingen lageradress sparad. Vänligen ställ in en lageradress nedan.</span>
+        </div>
+        
+        <!-- Warehouse Anchors / Lock Controls -->
+        <div class="warehouse-anchors">
+          <label class="toggle-container">
+            <input type="checkbox" id="lock-wh-start" checked>
+            <span class="checkmark"></span>
+            <span class="toggle-text"><i data-lucide="anchor"></i> Lås Start (Lager)</span>
+          </label>
+          <label class="toggle-container">
+            <input type="checkbox" id="lock-wh-end" checked>
+            <span class="checkmark"></span>
+            <span class="toggle-text"><i data-lucide="flag"></i> Lås Slut (Lager)</span>
+          </label>
+        </div>
+
+        <div id="warehouse-form" class="warehouse-input-group hide">
+          <div class="search-input-wrapper">
+            <input type="text" id="warehouse-input" placeholder="Sök lageradress, t.ex. Kungsgatan 12, Stockholm...">
+            <button id="search-warehouse-btn" class="btn btn-primary btn-icon-only">
+              <i data-lucide="search"></i>
+            </button>
+            <div id="warehouse-autocomplete-results" class="autocomplete-dropdown hide"></div>
+          </div>
+          <div class="form-actions">
+            <button id="cancel-warehouse-btn" class="btn btn-secondary btn-sm">Avbryt</button>
+            <button id="save-warehouse-btn" class="btn btn-primary btn-sm">Spara lager</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Add Stops Card -->
+      <div class="glass-card add-stops-card">
+        <div class="card-header">
+          <h2><i data-lucide="map-pins" class="text-primary"></i> Lägg till stopp</h2>
+        </div>
+        
+        <!-- Add Stop Inputs -->
+        <div class="add-stop-form">
+          <!-- Default City Setting -->
+          <div class="form-group" style="margin-bottom: 0.85rem;">
+            <label for="default-city-input"><i data-lucide="building"></i> Standardort (Valfritt):</label>
+            <input type="text" id="default-city-input" placeholder="T.ex. Varberg (fylls i automatiskt)...">
+          </div>
+          
+          <div class="search-input-wrapper flex-row-layout">
+            <div class="input-address-field">
+              <input type="text" id="stop-address-input" placeholder="Gatunamn (t.ex. Kungsgatan)..." enterkeyhint="next">
+              <div id="stop-autocomplete-results" class="autocomplete-dropdown hide"></div>
+            </div>
+            <div class="input-number-field">
+              <input type="text" id="stop-number-input" placeholder="Nr (t.ex. 12 B)..." inputmode="numeric" enterkeyhint="done">
+            </div>
+            <button id="search-stop-btn" class="btn btn-primary btn-icon-only" title="Sök adress">
+              <i data-lucide="search"></i>
+            </button>
+          </div>
+          
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="stop-duration-input"><i data-lucide="hourglass"></i> Stopptid (min):</label>
+              <input type="number" id="stop-duration-input" value="4" min="1" max="120">
+            </div>
+          </div>
+          
+          <button id="add-stop-text-btn" class="btn btn-primary btn-full">
+            <i data-lucide="plus"></i> Lägg till i listan
+          </button>
+        </div>
+      </div>
+
+      <!-- Stop Settings & Optimizations -->
+      <div class="route-controls">
+        <div class="global-duration-setting glass-card">
+          <label for="global-duration"><i data-lucide="settings"></i> Standardtid per stopp (min):</label>
+          <div class="global-duration-input-wrapper">
+            <input type="number" id="global-duration" value="4" min="1" max="120">
+            <button id="apply-global-duration" class="btn btn-secondary btn-sm">Uppdatera alla</button>
+          </div>
+        </div>
+        
+        <div class="action-buttons-group">
+          <button id="optimize-route-btn" class="btn btn-glow btn-full">
+            <i data-lucide="sparkles"></i> OPTIMERA SNABBASTE RUTT
+          </button>
+          
+          <button id="clear-route-btn" class="btn btn-danger flex-1">
+            <i data-lucide="trash-2"></i> Rensa rutt
+          </button>
+        </div>
+      </div>
+
+      <!-- Stop List -->
+      <div class="glass-card stop-list-card">
+        <div class="card-header">
+          <h2><i data-lucide="list-ordered"></i> Stopp i rutt</h2>
+          <span id="stops-counter" class="badge">0 stopp</span>
+        </div>
+        
+        <div id="empty-list-view" class="empty-list-message">
+          <i data-lucide="package-open"></i>
+          <p>Inga stopp tillagda än. Skriv en adress eller skanna en fraktsedel för att börja ruttplaneringen!</p>
+        </div>
+        
+        <ul id="stops-sortable-list" class="sortable-list">
+          <!-- Dynamically filled in app.js -->
+        </ul>
+      </div>
+
+    </section>
+
+    <!-- Left Column: Lastlista (LIFO Loading Panel) View -->
+    <section id="lastlista-panel" class="controls-panel tab-content-view hide">
+      
+      <!-- Lastlista Dashboard Card -->
+      <div class="glass-card lastlista-info-card">
+        <div class="card-header">
+          <h2><i data-lucide="package" class="text-success"></i> Lastlista (LIFO - Sist in, först ut)</h2>
+          <span id="lastlista-loaded-counter" class="badge">0 / 0 Lastade</span>
+        </div>
+        <p class="card-info-text">
+          Packa fordonet i ordningen nedan. Paketet till den <strong>sista leveransen</strong> ska lastas <strong>först (längst in)</strong>. Paketet till den <strong>första leveransen</strong> ska lastas <strong>sist (närmast dörrarna)</strong>.
+        </p>
+        <div class="lastlista-actions">
+          <button id="lastlista-check-all-btn" class="btn btn-secondary btn-sm">
+            <i data-lucide="check-square"></i> Markera alla som lastade
+          </button>
+          <button id="lastlista-uncheck-all-btn" class="btn btn-secondary btn-sm">
+            <i data-lucide="square"></i> Nollställ alla
+          </button>
+        </div>
+      </div>
+
+      <!-- LIFO Stops Checklist -->
+      <div class="glass-card stop-list-card">
+        <div class="card-header">
+          <h2><i data-lucide="list-checks"></i> Packningsordning</h2>
+        </div>
+        
+        <div id="lastlista-empty-view" class="empty-list-message">
+          <i data-lucide="package-2"></i>
+          <p>Inga stopp i rutt. Planera din rutt först för att generera lastlistan!</p>
+        </div>
+        
+        <ul id="lastlista-sortable-list" class="lastlista-stops-list">
+          <!-- Dynamically filled in app.js in reverse order (LIFO) -->
+        </ul>
+      </div>
+
+    </section>
+
+    <!-- Right Column: Map or Cargo Deck Visual -->
+    <section class="map-panel">
+      <div class="glass-card map-card">
+        
+        <!-- Interactive Leaflet Map Wrapper -->
+        <div id="map-view-wrapper" class="map-view-wrapper">
+          <div id="map"></div>
+          <div class="map-overlay-controls">
+            <button id="center-map-btn" class="btn btn-map-control" title="Centrera rutt">
+              <i data-lucide="maximize-2"></i>
+            </button>
+            <button id="locate-me-btn" class="btn btn-map-control" title="Hitta min position">
+              <i data-lucide="navigation-2"></i>
+            </button>
+          </div>
+        </div>
+        
+        <!-- Premium Visual Cargo Deck diagram (Delivery Van Mockup) -->
+        <div id="lastlista-cargo-visual" class="cargo-visual-container hide">
+          <div class="cargo-visual-header">
+            <h3><i data-lucide="truck"></i> Visuell Lastningsguide (Lastutrymme)</h3>
+            <p>Sist in (närmast bakdörrarna) levereras först! Klicka på paketen för att markera dem som lastade.</p>
+          </div>
+          
+          <div class="cargo-bay-diagram">
+            <!-- Front of vehicle: Driver Cabin -->
+            <div class="cab-section">
+              <div class="seats-row">
+                <div class="seat-wrapper"><div class="seat"></div><div class="steering-wheel"></div></div>
+                <div class="seat-wrapper"><div class="seat"></div></div>
+              </div>
+              <span class="cab-label"><i data-lucide="user"></i> FÖRARHYTT (FRAM)</span>
+            </div>
+            
+            <!-- Van Cargo Space Deck -->
+            <div class="cargo-space-deck">
+              <div class="zone-marker deepest">LÄNGST IN (Lasta först!) 📥</div>
+              <div id="cargo-grid-items" class="cargo-grid-items">
+                <!-- Dynamically filled with package blocks in LIFO order -->
+              </div>
+              <div class="zone-marker doors">NÄRMAST DÖRRARNA (Lasta sist!) 🚪</div>
+            </div>
+            
+            <!-- Back doors indicator -->
+            <div class="van-doors">
+              <div class="door-left"></div>
+              <div class="door-right"></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Fullscreen HUD Driving Mode Overlay -->
+  <div id="hud-overlay" class="hud-overlay-container hide">
+    <div class="hud-header">
+      <div class="hud-title-group">
+        <i data-lucide="navigation" class="hud-logo-icon"></i>
+        <div>
+          <h2>KÖR LÄGE</h2>
+          <span id="hud-subtitle">Stopp 1 av 5</span>
+        </div>
+      </div>
+      <button id="exit-hud-btn" class="btn btn-danger btn-sm">
+        <i data-lucide="log-out"></i> Avsluta
+      </button>
+    </div>
+    
+    <div class="hud-body">
+      <!-- Active stop big card -->
+      <div id="hud-active-stop-card" class="hud-active-card">
+        <div class="hud-badge-row">
+          <span class="hud-index-badge">NÄSTA STOPP 1</span>
+          <span id="hud-stop-duration" class="hud-duration-badge">⏱️ 4 min</span>
+          <span id="hud-eta-badge" class="hud-eta-badge">🏁 Sluttid: Kl --:--</span>
+        </div>
+        
+        <div class="hud-address-display" id="hud-active-address">
+          Kungsgatan 12, Stockholm
+        </div>
+        
+        <div class="hud-nav-action">
+          <!-- Native Navigation Trigger (Deep link to Android Auto/Google Maps) -->
+          <a id="hud-nav-link" href="#" target="_blank" class="hud-btn-nav">
+            <i data-lucide="navigation"></i> STARTA NAVIGERING
+          </a>
+        </div>
+      </div>
+      
+      <!-- Big Action Controls for HUD -->
+      <div class="hud-control-grid">
+        <button id="hud-success-btn" class="hud-action-btn success">
+          <i data-lucide="check-circle-2"></i>
+          <span>LEVERERAD</span>
+        </button>
+        
+        <button id="hud-fail-btn" class="hud-action-btn danger">
+          <i data-lucide="alert-triangle"></i>
+          <span>KUNDE EJ LEVERERA</span>
+        </button>
+      </div>
+      
+      <!-- HUD Navigation & Queue stats -->
+      <div class="hud-bottom-bar">
+        <div class="hud-queue-stats">
+          <button id="hud-prev-btn" class="btn btn-hud-arrow" disabled>
+            <i data-lucide="chevron-left"></i> FÖREGÅENDE
+          </button>
+          
+          <div class="hud-progress-info">
+            <div id="hud-eta-timer" class="hud-eta-time">Klar ca 16:45</div>
+            <div id="hud-dist-left" class="hud-dist-left">Kvar: 14 km (4 stopp)</div>
+          </div>
+          
+          <button id="hud-next-btn" class="btn btn-hud-arrow">
+            NÄSTA <i data-lucide="chevron-right"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Leaflet CDN Script -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  
+  <!-- Main Application Logic -->
+  <script src="app.js?v=22"></script>
+  
+  <!-- Toast Notification for Warnings / Confirmation -->
+  <div id="toast-notification" class="toast-notification hide">
+    <div class="toast-content">
+      <div class="toast-icon-wrapper">
+        <i data-lucide="alert-triangle" class="toast-icon"></i>
+      </div>
+      <div class="toast-text">
+        <strong id="toast-title">Varning</strong>
+        <span id="toast-message">Denna adress finns redan i din rutt.</span>
+      </div>
+    </div>
+    <div class="toast-actions">
+      <button id="toast-action-btn" class="btn btn-primary btn-sm">Lägg till ändå</button>
+      <button id="toast-close-btn" class="btn btn-secondary btn-sm">Avbryt</button>
+    </div>
+  </div>
+
+  <!-- PWA Service Worker Registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+          .then((reg) => console.log('Service Worker registrerad framgångsrikt!', reg.scope))
+          .catch((err) => console.error('Misslyckades att registrera Service Worker:', err));
+      });
+    }
+  </script>
+</body>
+</html>
