@@ -1842,4 +1842,50 @@ input:checked + .slider:before {
   background: rgba(59, 130, 246, 0.2) !important;
 }
 
+/* Stop Card Restructuring and Layout Rules */
+.stop-item-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  align-self: center;
+}
+
+.stop-item-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.stop-main-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+}
+
+.stop-item-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.stop-item-footer .stop-pin-actions {
+  display: flex;
+  gap: 4px;
+  margin: 0;
+}
+
+.stop-item-footer .stop-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+}
+
+
 

@@ -716,41 +716,47 @@ function renderPlaneraView() {
     const commentHTML = stop.comment ? `<div class="stop-comment-text">💬 ${stop.comment}</div>` : "";
 
     li.innerHTML = `
-      <div class="drag-handle" title="Dra för att omorganisera">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="18" height="18">
-          <circle cx="9" cy="5" r="1.5"></circle><circle cx="9" cy="12" r="1.5"></circle><circle cx="9" cy="19" r="1.5"></circle>
-          <circle cx="15" cy="5" r="1.5"></circle><circle cx="15" cy="12" r="1.5"></circle><circle cx="15" cy="19" r="1.5"></circle>
-        </svg>
-      </div>
-      <div class="stop-badge" onclick="focusPlaneraMapStop('${stop.id}')" style="cursor: pointer;" title="Visa på kartan">${badgeText}</div>
-      <div class="stop-info" onclick="event.target.tagName !== 'BUTTON' && focusPlaneraMapStop('${stop.id}')" style="cursor: pointer;" title="Visa på kartan">
-        <span class="stop-address">${stop.address} ${warningBadgeHTML}</span>
-        <div class="stop-details">
-          <span>Stopptid: ${state.stopTime} min</span>
-          ${statusHTML}
+      <div class="stop-item-left">
+        <div class="drag-handle" title="Dra för att omorganisera">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="18" height="18">
+            <circle cx="9" cy="5" r="1.5"></circle><circle cx="9" cy="12" r="1.5"></circle><circle cx="9" cy="19" r="1.5"></circle>
+            <circle cx="15" cy="5" r="1.5"></circle><circle cx="15" cy="12" r="1.5"></circle><circle cx="15" cy="19" r="1.5"></circle>
+          </svg>
         </div>
-        ${commentHTML}
+        <div class="stop-badge" onclick="focusPlaneraMapStop('${stop.id}')" style="cursor: pointer;" title="Visa på kartan">${badgeText}</div>
       </div>
-      <div class="stop-pin-actions">
-        <button class="btn-pin-tag ${isStart ? 'active-start' : ''}" onclick="togglePinStart('${stop.id}')" title="Fäst som startleverans" ${isGeocoded ? "" : "disabled"}>
-          ${isStart ? '★ Start' : 'Start'}
-        </button>
-        <button class="btn-pin-tag ${isEnd ? 'active-end' : ''}" onclick="togglePinEnd('${stop.id}')" title="Fäst som slutleverans" ${isGeocoded ? "" : "disabled"}>
-          ${isEnd ? '★ Slut' : 'Slut'}
-        </button>
-      </div>
-      <div class="stop-actions">
-        <button class="stop-comment-btn" onclick="editStopComment('${stop.id}')" title="Ändra anteckning">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-          </svg>
-        </button>
-        <button class="stop-delete-btn" onclick="removeStop('${stop.id}')" aria-label="Ta bort stopp">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
-            <polyline points="3 6 5 6 21 6"></polyline>
-            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-          </svg>
-        </button>
+      <div class="stop-item-content">
+        <div class="stop-main-info" onclick="focusPlaneraMapStop('${stop.id}')" style="cursor: pointer;" title="Visa på kartan">
+          <span class="stop-address">${stop.address} ${warningBadgeHTML}</span>
+          ${commentHTML}
+        </div>
+        <div class="stop-item-footer">
+          <div class="stop-details">
+            <span>Stopptid: ${state.stopTime} min</span>
+            ${statusHTML}
+          </div>
+          <div class="stop-pin-actions">
+            <button class="btn-pin-tag ${isStart ? 'active-start' : ''}" onclick="togglePinStart('${stop.id}')" title="Fäst som startleverans" ${isGeocoded ? "" : "disabled"}>
+              ${isStart ? '★ Start' : 'Start'}
+            </button>
+            <button class="btn-pin-tag ${isEnd ? 'active-end' : ''}" onclick="togglePinEnd('${stop.id}')" title="Fäst som slutleverans" ${isGeocoded ? "" : "disabled"}>
+              ${isEnd ? '★ Slut' : 'Slut'}
+            </button>
+          </div>
+          <div class="stop-actions">
+            <button class="stop-comment-btn" onclick="editStopComment('${stop.id}')" title="Ändra anteckning">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+              </svg>
+            </button>
+            <button class="stop-delete-btn" onclick="removeStop('${stop.id}')" aria-label="Ta bort stopp">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2-0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
       </div>
     `;
     container.appendChild(li);
@@ -1957,13 +1963,6 @@ window.focusPlaneraMapStop = function(stopId) {
   if (stop && stop.lat !== null && stop.lon !== null) {
     if (mapPlanera) {
       mapPlanera.setView([stop.lat, stop.lon], 15);
-      
-      // Open marker popup automatically on Planera map
-      planeraMarkersGroup.eachLayer(layer => {
-        if (layer.options.title === stop.address) {
-          layer.openPopup();
-        }
-      });
       
       // Scroll smoothly to the map at the top of the view
       const mapContainer = document.getElementById("planera-map-wrapper");
