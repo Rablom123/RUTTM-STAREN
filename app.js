@@ -40,6 +40,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initForms();
   initDragAndDrop();
   initModals();
+  initBrandUpdateTrigger();
   
   // Register Service Worker for PWA
   if ("serviceWorker" in navigator) {
@@ -1906,5 +1907,48 @@ async function fetchSuggestions(query) {
   } catch (err) {
     console.warn("Kunde inte hämta adressförslag:", err);
   }
+}
+
+// Manual Cache-Clear and Force-Update trigger bound to brand header click
+function initBrandUpdateTrigger() {
+  const brand = document.getElementById("brand-logo");
+  if (!brand) return;
+  
+  brand.addEventListener("click", () => {
+    showSwedishChoiceModal(
+      "Uppdatera applikationen?",
+      "Vill du rensa cachen och tvinga appen att hämta den absolut senaste versionen från servern? Dagens rutt och lager sparas på enheten.",
+      "Ja, uppdatera",
+      "Avbryt",
+      async () => {
+        // Show loading modal immediately to guide driver
+        showSwedishModal("Uppdaterar...", "Rensar PWA-cache och laddar om applikationen, vänligen vänta...");
+        
+        if ('serviceWorker' in navigator) {
+          try {
+            // Unregister all active service workers
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            for (let registration of registrations) {
+              await registration.unregister();
+            }
+            
+            // Delete all cache storage targets
+            if ('caches' in window) {
+              const cacheNames = await caches.keys();
+              for (let cacheName of cacheNames) {
+                await caches.delete(cacheName);
+              }
+            }
+            console.log("PWA registration and caches cleared successfully.");
+          } catch (e) {
+            console.error("Det gick inte att rensa cache/registrerade workers:", e);
+          }
+        }
+        
+        // Force reload bypassing the cache
+        window.location.reload(true);
+      }
+    );
+  });
 }
 
