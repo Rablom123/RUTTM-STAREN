@@ -658,9 +658,8 @@ input:checked + .slider:before {
   font-size: 0.88rem;
   font-weight: 600;
   color: var(--text-main);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .stop-details {

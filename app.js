@@ -722,8 +722,8 @@ function renderPlaneraView() {
           <circle cx="15" cy="5" r="1.5"></circle><circle cx="15" cy="12" r="1.5"></circle><circle cx="15" cy="19" r="1.5"></circle>
         </svg>
       </div>
-      <div class="stop-badge">${badgeText}</div>
-      <div class="stop-info">
+      <div class="stop-badge" onclick="focusPlaneraMapStop('${stop.id}')" style="cursor: pointer;" title="Visa på kartan">${badgeText}</div>
+      <div class="stop-info" onclick="event.target.tagName !== 'BUTTON' && focusPlaneraMapStop('${stop.id}')" style="cursor: pointer;" title="Visa på kartan">
         <span class="stop-address">${stop.address} ${warningBadgeHTML}</span>
         <div class="stop-details">
           <span>Stopptid: ${state.stopTime} min</span>
@@ -1951,4 +1951,28 @@ function initBrandUpdateTrigger() {
     );
   });
 }
+
+window.focusPlaneraMapStop = function(stopId) {
+  const stop = state.stops.find(s => s.id === stopId);
+  if (stop && stop.lat !== null && stop.lon !== null) {
+    if (mapPlanera) {
+      mapPlanera.setView([stop.lat, stop.lon], 15);
+      
+      // Open marker popup automatically on Planera map
+      planeraMarkersGroup.eachLayer(layer => {
+        if (layer.options.title === stop.address) {
+          layer.openPopup();
+        }
+      });
+      
+      // Scroll smoothly to the map at the top of the view
+      const mapContainer = document.getElementById("planera-map-wrapper");
+      if (mapContainer) {
+        mapContainer.scrollIntoView({ behavior: 'smooth' });
+      }
+    }
+  } else if (stop) {
+    showSwedishModal("Kan inte visa på kartan", "Detta stopp kunde inte geokodas och har ingen position på kartan.");
+  }
+};
 
