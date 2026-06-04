@@ -1,1841 +1,1910 @@
-/* ==========================================================================
-   RUTTMÄSTAREN - APPLICATION ENGINE (app.js)
-   ========================================================================== */
+/**
+ * Ruttplaneraren - Smart Ruttoptimering för budbilar
+ * Core Application Logic
+ */
 
-// Application State
+// ==========================================================================
+// 1. APPLICATION STATE
+// ==========================================================================
 const state = {
-  warehouse: null, // { address: '', lat: 0, lng: 0 }
-  stops: [],       // Array of: { id: '', address: '', lat: 0, lng: 0, duration: 4, status: 'pending'|'delivered'|'failed', isPinnedStart: false, isPinnedEnd: false }
-  routeOrder: [],  // Array of stop indices (representing sequence including warehouse)
-  routeGeometry: null,
-  routeDistance: 0, // meters
-  routeDuration: 0, // seconds
-  globalDuration: 4, // default minutes per stop
-  hudActiveIndex: -1, // active stop index in HUD mode
-  isHUDActive: false,
-  defaultCity: '',     // Default city to append to typed or scanned addresses
-  lockWarehouseStart: true,
-  lockWarehouseEnd: true,
-  lastlistaLoadedStops: {} // map of stopId -> boolean
+  warehouse: null,       // { address: string, lat: number, lon: number }
+  defaultCity: "Halmstad",
+  stopTime: 3,           // stop processing time in minutes
+  lockWarehouse: true,   // Pin warehouse at start & end
+  stops: [],             // Array of stops: { id, address, lat, lon, status, cargoLoaded }
+  activeTab: "planera",  // planera, lastlista, korlage
+  currentStopIndex: 0,   // Current target stop index in Körläge
+  pinnedStartStopId: null, // Pinned first delivery stop
+  pinnedEndStopId: null,   // Pinned last delivery stop
 };
 
-// Leaflet Map Globals
+// Map instances
 let map = null;
 let routeLine = null;
 let markersGroup = null;
 
-// OCR Globals
-let ocrWorker = null;
+let mapPlanera = null;
+let planeraRouteLine = null;
+let planeraMarkersGroup = null;
+
+// Drag and drop state
+let dragSrcEl = null;
 
 // ==========================================================================
-// 1. INITIALIZATION & LOCALSTORAGE
+// 2. INITIALIZATION
 // ==========================================================================
-document.addEventListener('DOMContentLoaded', async () => {
-  // Initialize Lucide Icons
-  lucide.createIcons();
-  
-  // Load State from LocalStorage
+document.addEventListener("DOMContentLoaded", () => {
   loadStateFromStorage();
+  initTabs();
+  initSettingsPanel();
+  initForms();
+  initDragAndDrop();
+  initModals();
   
-  // Initialize Map
-  initMap();
-  
-  // Setup Event Listeners
-  setupEventListeners();
-  
-  // Pre-load OCR and other components removed
-  
-  // Render Initial View
-  renderWarehouse();
-  renderStopsList();
-  renderLastlista();
-  updateDashboard();
-  
-  // Set checked states for warehouse toggles
-  document.getElementById('lock-wh-start').checked = state.lockWarehouseStart;
-  document.getElementById('lock-wh-end').checked = state.lockWarehouseEnd;
-  
-  // Real-time clock update: refresh Sluttid/ETA stats every 30 seconds automatically
-  setInterval(updateDashboard, 30000);
-  
-  // If we already have stops, plot them on map
-  if (state.stops.length > 0) {
-    calculateRoute(false); // get cached/existing route drawn
+  // Register Service Worker for PWA
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("./sw.js")
+        .then(reg => console.log("[Service Worker] Registered successfully"))
+        .catch(err => console.error("[Service Worker] Registration failed", err));
+    });
   }
+
+  // Draw UI and initialize maps on startup
+  renderAll();
+  setTimeout(initPlaneraMap, 100);
 });
 
-// Load state from local storage
+// Load state from localStorage
 function loadStateFromStorage() {
-  const savedWarehouse = localStorage.getItem('rm_warehouse');
-  if (savedWarehouse) {
-    state.warehouse = JSON.parse(savedWarehouse);
-  }
-  
-  const savedStops = localStorage.getItem('rm_stops');
-  if (savedStops) {
-    state.stops = JSON.parse(savedStops).map(s => ({
-      ...s,
-      isPinnedStart: !!s.isPinnedStart,
-      isPinnedEnd: !!s.isPinnedEnd
-    }));
-  }
-  
-  const savedGlobalDuration = localStorage.getItem('rm_global_duration');
-  if (savedGlobalDuration) {
-    state.globalDuration = parseInt(savedGlobalDuration, 10);
-    document.getElementById('global-duration').value = state.globalDuration;
-    document.getElementById('stop-duration-input').value = state.globalDuration;
-  }
-  
-  const savedDefaultCity = localStorage.getItem('rm_default_city');
-  if (savedDefaultCity) {
-    state.defaultCity = savedDefaultCity;
-    document.getElementById('default-city-input').value = state.defaultCity;
-  }
-
-  const savedLockWhStart = localStorage.getItem('rm_lock_wh_start');
-  if (savedLockWhStart !== null) {
-    state.lockWarehouseStart = savedLockWhStart === 'true';
-  }
-  
-  const savedLockWhEnd = localStorage.getItem('rm_lock_wh_end');
-  if (savedLockWhEnd !== null) {
-    state.lockWarehouseEnd = savedLockWhEnd === 'true';
-  }
-  
-  const savedLastlistaLoaded = localStorage.getItem('rm_lastlista_loaded');
-  if (savedLastlistaLoaded) {
-    state.lastlistaLoadedStops = JSON.parse(savedLastlistaLoaded);
+  const savedState = localStorage.getItem("ruttplaneraren_state");
+  if (savedState) {
+    try {
+      const parsed = JSON.parse(savedState);
+      state.warehouse = parsed.warehouse || null;
+      state.defaultCity = parsed.defaultCity !== undefined ? parsed.defaultCity : "Halmstad";
+      state.stopTime = Number(parsed.stopTime) || 3;
+      state.lockWarehouse = parsed.lockWarehouse !== undefined ? parsed.lockWarehouse : true;
+      state.stops = parsed.stops || [];
+      state.currentStopIndex = parsed.currentStopIndex !== undefined ? parsed.currentStopIndex : 0;
+      state.pinnedStartStopId = parsed.pinnedStartStopId || null;
+      state.pinnedEndStopId = parsed.pinnedEndStopId || null;
+    } catch (e) {
+      console.error("Kunde inte läsa sparat tillstånd från localStorage", e);
+    }
   }
 }
 
-// Save state to local storage
+// Save state to localStorage
 function saveStateToStorage() {
-  localStorage.setItem('rm_warehouse', JSON.stringify(state.warehouse));
-  localStorage.setItem('rm_stops', JSON.stringify(state.stops));
-  localStorage.setItem('rm_global_duration', state.globalDuration.toString());
-  localStorage.setItem('rm_default_city', state.defaultCity);
-  localStorage.setItem('rm_lock_wh_start', state.lockWarehouseStart.toString());
-  localStorage.setItem('rm_lock_wh_end', state.lockWarehouseEnd.toString());
-  localStorage.setItem('rm_lastlista_loaded', JSON.stringify(state.lastlistaLoadedStops));
+  localStorage.setItem("ruttplaneraren_state", JSON.stringify(state));
 }
 
 // ==========================================================================
-// 2. INTERACTIVE MAP FUNCTIONS (LEAFLET.JS)
+// 3. UI RENDERING & ROUTERS
 // ==========================================================================
-function initMap() {
-  // Start centered on Sweden
-  const startLat = state.warehouse ? state.warehouse.lat : 59.3293;
-  const startLng = state.warehouse ? state.warehouse.lng : 18.0686;
-  const startZoom = state.warehouse ? 13 : 5;
+function renderAll() {
+  // Update Config Inputs
+  document.getElementById("warehouse-input").value = state.warehouse ? state.warehouse.address : "";
+  document.getElementById("default-city-input").value = state.defaultCity;
+  document.getElementById("stop-time-input").value = state.stopTime;
+  document.getElementById("lock-warehouse-switch").checked = state.lockWarehouse;
   
-  map = L.map('map', {
-    zoomControl: false,
-    attributionControl: false
-  }).setView([startLat, startLng], startZoom);
-  
-  // Custom dark-mode voyager tiles
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-    maxZoom: 19
-  }).addTo(map);
-  
-  // Add zoom control at bottom-right
-  L.control.zoom({
-    position: 'bottomright'
-  }).addTo(map);
-  
-  markersGroup = L.layerGroup().addTo(map);
-}
-
-// Generate premium custom numbered map pins
-function createCustomMarker(number, type, tooltipText) {
-  let numberContent = number;
-  if (type === 'warehouse') numberContent = '🏠';
-  
-  const icon = L.divIcon({
-    className: `custom-map-marker ${type}`,
-    html: `
-      <div class="custom-marker-pin"></div>
-      <span class="custom-marker-number">${numberContent}</span>
-    `,
-    iconSize: [32, 32],
-    iconAnchor: [16, 32]
-  });
-  
-  return icon;
-}
-
-// Refresh all pins on the map
-function updateMapMarkers() {
-  if (!map || !markersGroup) return;
-  markersGroup.clearLayers();
-  
-  // 1. Plot Warehouse if available
-  if (state.warehouse) {
-    const whMarker = L.marker([state.warehouse.lat, state.warehouse.lng], {
-      icon: createCustomMarker('H', 'warehouse')
-    }).bindPopup(`<strong>Lager (Start/Mål)</strong><br>${state.warehouse.address}`);
-    
-    markersGroup.addLayer(whMarker);
+  const helperCityText = document.getElementById("helper-city-text");
+  if (helperCityText) {
+    const helperSpan = helperCityText.closest(".input-helper");
+    if (helperSpan) {
+      if (state.defaultCity && state.defaultCity.trim()) {
+        helperSpan.innerHTML = `Om ingen ort anges, läggs <strong><span id="helper-city-text">${state.defaultCity}</span></strong> till automatiskt.`;
+      } else {
+        helperSpan.innerHTML = `Skriv gata och ort (t.ex. <strong>Storgatan 12, Halmstad</strong>). Du får förslag när du skriver.`;
+      }
+    }
   }
   
-  // 2. Plot all stops in their CURRENT order
-  state.stops.forEach((stop, index) => {
-    const markerType = stop.status; // pending, delivered, failed
-    const stopNumber = index + 1;
-    
-    const stopMarker = L.marker([stop.lat, stop.lng], {
-      icon: createCustomMarker(stopNumber, markerType)
-    }).bindPopup(`
-      <strong>Stopp ${stopNumber}: ${stop.address}</strong><br>
-      Tid: ${stop.duration} min<br>
-      Status: ${getStatusName(stop.status)}
-    `);
-    
-    markersGroup.addLayer(stopMarker);
+  const warehouseStatus = document.getElementById("warehouse-status");
+  if (state.warehouse) {
+    warehouseStatus.innerHTML = `<span class="icon-emerald">✓ Lager sparat:</span> ${state.warehouse.address}`;
+    warehouseStatus.style.color = "var(--accent-emerald)";
+  } else {
+    warehouseStatus.textContent = "Inget lager sparat. Rutten kräver en startpunkt.";
+    warehouseStatus.style.color = "var(--accent-orange)";
+  }
+
+  // Render Page Views based on Active Tab
+  renderPlaneraView();
+  renderLastlistaView();
+  renderKorlageView();
+  
+  // Recalculate dynamic stats and update header ETA
+  updateGlobalETAEngine();
+  
+  saveStateToStorage();
+}
+
+// Tab Switching Mechanism
+function initTabs() {
+  const navButtons = document.querySelectorAll(".app-nav .nav-btn");
+  const views = document.querySelectorAll(".app-content .view-section");
+
+  navButtons.forEach(btn => {
+    btn.addEventListener("click", () => {
+      const targetTab = btn.id.replace("nav-", "");
+      state.activeTab = targetTab;
+      
+      // Update UI active tab state
+      navButtons.forEach(b => b.classList.remove("active"));
+      views.forEach(v => v.classList.remove("active"));
+      
+      btn.classList.add("active");
+      const targetView = document.getElementById(`view-${targetTab}`);
+      if (targetView) targetView.classList.add("active");
+      
+      // If switching to Körläge or Planera, instantiate or update Map
+      if (targetTab === "korlage") {
+        setTimeout(initLeafletMap, 100);
+      } else if (targetTab === "planera") {
+        setTimeout(initPlaneraMap, 100);
+      }
+      
+      renderAll();
+    });
   });
 }
 
-function getStatusName(status) {
-  if (status === 'delivered') return '<span class="text-success">Levererad ✅</span>';
-  if (status === 'failed') return '<span class="text-danger">Misslyckades ❌</span>';
-  return '<span class="text-primary">Väntar ⏳</span>';
-}
+// Settings toggle card behavior
+function initSettingsPanel() {
+  const toggle = document.getElementById("settings-toggle");
+  const body = document.getElementById("settings-body");
+  const chevron = document.getElementById("settings-chevron");
 
-// Draw the route path line
-function drawRoutePath(coordinates) {
-  if (!map) return;
-  
-  // Remove existing line if any
-  if (routeLine) {
-    map.removeLayer(routeLine);
-  }
-  
-  if (!coordinates || coordinates.length === 0) return;
-  
-  // Draw thick, glowing path
-  routeLine = L.polyline(coordinates, {
-    color: '#3B82F6',
-    weight: 6,
-    opacity: 0.85,
-    lineJoin: 'round',
-    shadowBlur: 10,
-    shadowColor: '#3B82F6',
-    className: 'route-polyline'
-  }).addTo(map);
-  
-  // Add CSS animation/glowing properties if browser supports it
-  const pathElement = routeLine.getElement();
-  if (pathElement) {
-    pathElement.style.filter = 'drop-shadow(0px 0px 8px rgba(59, 130, 246, 0.6))';
-  }
-}
-
-// Center map to cover all stops + warehouse
-function fitMapBounds() {
-  if (!map) return;
-  
-  const points = [];
-  if (state.warehouse) {
-    points.push([state.warehouse.lat, state.warehouse.lng]);
-  }
-  
-  state.stops.forEach(s => points.push([s.lat, s.lng]));
-  
-  if (points.length > 0) {
-    const bounds = L.latLngBounds(points);
-    map.fitBounds(bounds, { padding: [50, 50] });
-  }
+  toggle.addEventListener("click", () => {
+    body.classList.toggle("hidden");
+    chevron.classList.toggle("rotated");
+  });
 }
 
 // ==========================================================================
-// 3. GEOCODING & AUTOCOMPLETE (NOMINATIM API)
+// 4. ADDRESS GEOCONDING & VALIDATION (NOMINATIM)
 // ==========================================================================
-// Helper function to format Swedish address and preserve street/house numbers
-function formatSwedishAddress(item, originalQuery) {
-  const addr = item.address || {};
-  
-  // Extract house number from original query (e.g. "Sveavägen 44" -> "44", "Kungsgatan 12 B" -> "12 B")
-  const queryNumberRegex = /\b(\d+\s*[a-zåäö]?)\b/i;
-  let originalNumber = "";
-  if (originalQuery) {
-    const numMatch = originalQuery.match(queryNumberRegex);
-    if (numMatch) {
-      originalNumber = numMatch[1].trim();
-    }
-  }
-  
-  let road = addr.road || addr.pedestrian || addr.footway || addr.cycleway || "";
-  let houseNumber = addr.house_number || originalNumber || ""; // Fallback to user's originally typed number if API returns undefined
-  let city = addr.city || addr.town || addr.village || addr.suburb || addr.municipality || "";
-  
-  if (road) {
-    let cleanRoad = road;
-    
-    // If we have a house number and it's not already in the street name string, append it!
-    if (houseNumber && !cleanRoad.toLowerCase().includes(houseNumber.toLowerCase())) {
-      cleanRoad = `${cleanRoad} ${houseNumber}`;
-    }
-    
-    // Capitalize words nicely
-    cleanRoad = cleanRoad.toLowerCase().replace(/\b[a-zåäöéèüïäåæø]/gi, char => char.toUpperCase());
-    
-    if (city) {
-      const cleanCity = city.toLowerCase().replace(/\b[a-zåäöéèüïäåæø]/gi, char => char.toUpperCase());
-      // Prevent duplicating city name if it's already part of the road string
-      if (cleanRoad.toLowerCase().includes(cleanCity.toLowerCase())) {
-        return cleanRoad;
-      }
-      return `${cleanRoad}, ${cleanCity}`;
-    }
-    return cleanRoad;
-  }
-  
-  // Fallback split method if no road was parsed, but inject house number if missing
-  let fallback = item.display_name.split(',').slice(0, 3).join(',').trim();
-  if (originalNumber && !fallback.toLowerCase().includes(originalNumber.toLowerCase())) {
-    const parts = fallback.split(',');
-    parts[0] = `${parts[0].trim()} ${originalNumber}`;
-    fallback = parts.join(', ');
-  }
-  
-  // Clean capitalization
-  return fallback.toLowerCase().replace(/\b[a-zåäöéèüïäåæø]/gi, char => char.toUpperCase());
-}
+function initForms() {
+  // Default City Change
+  document.getElementById("default-city-input").addEventListener("change", (e) => {
+    state.defaultCity = e.target.value.trim();
+    renderAll();
+    saveStateToStorage();
+  });
 
-async function searchAddress(query, isStop = false) {
-  if (!query || query.trim().length < 3) return [];
-  
-  let searchQuery = query;
-  if (isStop && state.defaultCity && !query.toLowerCase().includes(state.defaultCity.toLowerCase())) {
-    searchQuery = `${query}, ${state.defaultCity}`;
-  }
-  
-  try {
-    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&limit=5&addressdetails=1&countrycodes=se`;
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'RuttPlanerarenBudbil/1.0 (ruttmaster@example.com)'
-      }
-    });
-    
-    if (!response.ok) throw new Error('Geokodnings-fel');
-    const data = await response.json();
-    
-    return data.map(item => {
-      const formatted = formatSwedishAddress(item, query);
-      return {
-        address: formatted,
-        fullAddress: item.display_name,
-        lat: parseFloat(item.lat),
-        lng: parseFloat(item.lon)
-      };
-    });
-  } catch (error) {
-    console.error('Nominatim Geocoding Error:', error);
-    return [];
-  }
-}
+  // Stop Time Change
+  document.getElementById("stop-time-input").addEventListener("change", (e) => {
+    state.stopTime = Math.max(1, Number(e.target.value) || 3);
+    updateGlobalETAEngine();
+    saveStateToStorage();
+  });
 
-// ==========================================================================
-// 4. TSP ROUTE OPTIMIZATION (2-OPT ALGORITHM)
-// ============================// Fetch current GPS location with high accuracy and a 5-second timeout fallback
-function getCurrentGPSPosition() {
-  return new Promise((resolve) => {
-    if (!navigator.geolocation) {
-      console.warn("GPS stöds inte av din webbläsare.");
-      resolve(null);
+  // Pin Warehouse Switch Change
+  document.getElementById("lock-warehouse-switch").addEventListener("change", (e) => {
+    state.lockWarehouse = e.target.checked;
+    saveStateToStorage();
+  });
+
+  // Save Warehouse button click
+  document.getElementById("save-warehouse-btn").addEventListener("click", async () => {
+    const input = document.getElementById("warehouse-input");
+    const address = input.value.trim();
+    if (!address) {
+      showSwedishModal("Valideringsfel", "Ange en giltig adress för lagret.");
       return;
     }
     
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        resolve({
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude
+    // Auto append city if needed
+    const formattedAddress = appendDefaultCityIfNeeded(address);
+    input.value = formattedAddress;
+
+    const btn = document.getElementById("save-warehouse-btn");
+    btn.disabled = true;
+    btn.textContent = "Söker...";
+
+    try {
+      const coords = await geocodeAddress(formattedAddress);
+      if (coords) {
+        state.warehouse = {
+          address: formattedAddress,
+          lat: coords.lat,
+          lon: coords.lon
+        };
+        showSwedishModal("Lager sparad", `Lagret har placerats på kartan:<br><strong>${formattedAddress}</strong>`);
+        calculateRouteGeometryAndStats().then(() => {
+          renderAll();
+          if (mapPlanera) updatePlaneraMapPathsAndMarkers();
+          if (map) updateMapPathsAndMarkers();
         });
-      },
-      (err) => {
-        console.warn("GPS-hämtning misslyckades eller nekades:", err);
-        resolve(null);
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 5000,
-        maximumAge: 0
+      } else {
+        showSwedishModal("Adressen hittades inte", `Kunde inte verifiera adressen: <strong>"${formattedAddress}"</strong>. Kontrollera stavning eller postnummer.`);
+      }
+    } catch (e) {
+      showSwedishModal("Systemfel", "Ett nätverksfel uppstod under adressverifieringen. Försök igen.");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Spara";
+    }
+  });
+
+  // Add Delivery Address Form submit
+  document.getElementById("add-address-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const input = document.getElementById("address-input");
+    const address = input.value.trim();
+    if (!address) return;
+
+    // Auto-append city if missing
+    const formattedAddress = appendDefaultCityIfNeeded(address);
+
+    // Duplicate Prevention check
+    if (isDuplicateAddress(formattedAddress)) {
+      showSwedishModal("Adressen finns redan", `Leveransen till <strong>"${formattedAddress}"</strong> är redan tillagd i ruttlistan.`);
+      return;
+    }
+
+    const btn = document.getElementById("add-address-btn");
+    const spinner = document.getElementById("geocode-spinner");
+    
+    btn.disabled = true;
+    btn.querySelector(".btn-text").classList.add("hidden");
+    spinner.classList.remove("hidden");
+
+    try {
+      const coords = await geocodeAddress(formattedAddress);
+      if (coords) {
+        // Successful Geocoding -> Add stop
+        const newStop = {
+          id: "stop_" + Date.now() + "_" + Math.floor(Math.random() * 1000),
+          address: formattedAddress,
+          lat: coords.lat,
+          lon: coords.lon,
+          status: "pending",
+          cargoLoaded: false,
+          duration: 0 // Will be computed by router
+        };
+        
+        state.stops.push(newStop);
+        input.value = ""; // Clear input field
+        calculateRouteGeometryAndStats().then(() => {
+          renderAll();
+          if (mapPlanera) updatePlaneraMapPathsAndMarkers();
+          if (map) updateMapPathsAndMarkers();
+        });
+      } else {
+        showSwedishChoiceModal(
+          "Adressen hittades inte",
+          `Kunde inte verifiera adressen <strong>"${formattedAddress}"</strong> på kartan.<br><br>Vill du lägga till den i listan ändå (som ett ej geokodat stopp)? Den kommer inte visas på kartan eller optimeras geografiskt.`,
+          "Ja, lägg till",
+          "Avbryt",
+          () => {
+            addNonGeocodedStop(formattedAddress);
+            input.value = "";
+          }
+        );
+      }
+    } catch (e) {
+      showSwedishModal("Anslutningsfel", "Kunde inte kommunicera med adress-servern. Kontrollera din internetanslutning.");
+    } finally {
+      btn.disabled = false;
+      btn.querySelector(".btn-text").classList.remove("hidden");
+      spinner.classList.add("hidden");
+    }
+  });
+
+  // Optimize Route Button
+  document.getElementById("optimize-btn").addEventListener("click", () => {
+    optimizeAndOrderRoute();
+  });
+
+  // Clean Route state
+  document.getElementById("clear-route-btn").addEventListener("click", () => {
+    showSwedishConfirmModal(
+      "Rensa rutt?",
+      "Detta kommer att ta bort ALLA inlagda leveransadresser och återställa dagens körpass. Är du säker?",
+      () => {
+        state.stops = [];
+        state.currentStopIndex = 0;
+        state.pinnedStartStopId = null;
+        state.pinnedEndStopId = null;
+        state.roadDistance = 0;
+        state.roadDuration = 0;
+        state.roadGeometry = null;
+        renderAll();
+        if (mapPlanera) updatePlaneraMapPathsAndMarkers();
+        if (map) updateMapPathsAndMarkers();
       }
     );
   });
+
+  initAutocomplete();
 }
 
-// Solve Traveling Salesperson Problem (TSP) using OSRM Distance Matrix starting from GPS position
-async function calculateRoute(shouldOptimize = true) {
+// Auto appends Default City to address if no Swedish city structure exists
+function appendDefaultCityIfNeeded(address) {
+  if (!state.defaultCity || !state.defaultCity.trim()) {
+    return address;
+  }
+  const zipPattern = /\b\d{3}\s?\d{2}\b/; // Swedish postcodes: 302 35 or 30235
+  const hasComma = address.includes(",");
+  const hasZip = zipPattern.test(address);
+  const containsCity = address.toLowerCase().includes(state.defaultCity.toLowerCase());
+
+  if (!hasComma && !hasZip && !containsCity) {
+    return `${address}, ${state.defaultCity}`;
+  }
+  return address;
+}
+
+// Geocoding query using OpenStreetMap Nominatim
+async function geocodeAddress(address) {
+  const query = encodeURIComponent(address);
+  // Restrict searches to Sweden (se) for faster and more accurate geocoding
+  const url = `https://nominatim.openstreetmap.org/search?format=json&q=${query}&countrycodes=se&limit=1`;
+  
+  const response = await fetch(url, {
+    headers: {
+      "User-Agent": "RuttplanerarenDeliveryApp/1.0 (RasmusPC Sweden Delivery)"
+    }
+  });
+  
+  if (!response.ok) return null;
+  const data = await response.json();
+  if (data && data.length > 0) {
+    return {
+      lat: parseFloat(data[0].lat),
+      lon: parseFloat(data[0].lon)
+    };
+  }
+  return null;
+}
+
+// Checks if address matches normalized versions of existing stops or warehouse
+function isDuplicateAddress(newAddress) {
+  const normalize = (str) => str.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const normalizedNew = normalize(newAddress);
+  
+  if (state.warehouse && normalize(state.warehouse.address) === normalizedNew) {
+    return true;
+  }
+  return state.stops.some(stop => normalize(stop.address) === normalizedNew);
+}
+
+// ==========================================================================
+// 5. TSP OPTIMIZATION (2-OPT + OSRM NETWORKING)
+// ==========================================================================
+
+// Calculate Spherical Haversine Distance (in km)
+function haversineDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Earth radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+// Solves TSP using 2-opt search heuristic with optional start/end delivery pins
+async function optimizeAndOrderRoute() {
   if (state.stops.length === 0) {
-    // Just show warehouse
-    updateMapMarkers();
-    if (routeLine) map.removeLayer(routeLine);
-    state.routeDistance = 0;
-    state.routeDuration = 0;
-    updateDashboard();
-    renderLastlista();
+    showSwedishModal("Inga adresser", "Lägg till minst en leveransadress innan du optimerar rutten.");
+    return;
+  }
+  if (!state.warehouse) {
+    showSwedishModal("Saknar startlager", "Du måste konfigurera och spara ett Start-/Slutlager i inställningarna ovan först.");
+    // Open settings card automatically to assist driver
+    document.getElementById("settings-body").classList.remove("hidden");
+    document.getElementById("settings-chevron").classList.add("rotated");
     return;
   }
 
-  const showLoader = (show) => {
-    const btn = document.getElementById('optimize-route-btn');
-    if (btn) {
-      if (show) {
-        btn.innerHTML = `<div class="spinner" style="width:16px;height:16px;border-width:2px;display:inline-block;margin-right:8px;"></div> OPTIMERAR...`;
-        btn.disabled = true;
-      } else {
-        btn.innerHTML = `<i data-lucide="sparkles"></i> OPTIMERA SNABBASTE RUTT`;
-        btn.disabled = false;
-        lucide.createIcons();
-      }
-    }
-  };
-
-  showLoader(true);
+  const optimizeBtn = document.getElementById("optimize-btn");
+  optimizeBtn.disabled = true;
+  optimizeBtn.textContent = "Optimerar rutt...";
 
   try {
-    // 1. Determine startPoint based on settings
-    let startPoint = null;
-    if (shouldOptimize && !state.lockWarehouseStart) {
-      startPoint = await getCurrentGPSPosition();
-      if (startPoint) {
-        console.log("GPS-position hämtad framgångsrikt för start:", startPoint);
-      }
-    }
-    
-    // Fallback to warehouse if GPS failed or not optimizing or lock start is active
-    if (!startPoint) {
-      startPoint = state.warehouse;
-    }
+    // Split into Visited (completed/failed) and Pending stops
+    const visited = state.stops.filter(s => s.status === "completed" || s.status === "failed");
+    let pending = state.stops.filter(s => s.status === "pending");
 
-    if (!startPoint) {
-      alert("Hittade ingen startposition! Vänligen ställ in lagrets adress eller tillåt GPS-delning i webbläsaren.");
-      showLoader(false);
+    if (pending.length === 0) {
+      showSwedishModal("Inga väntande stopp", "Det finns inga väntande stopp att optimera. Alla stopp är redan markerade som levererade eller misslyckade.");
+      optimizeBtn.disabled = false;
+      optimizeBtn.textContent = "Optimera Rutt (Snabbaste vägen)";
       return;
     }
 
-    // Determine endPoint
-    const endPoint = state.lockWarehouseEnd ? state.warehouse : null;
+    // 1. Partition pending stops into geocoded and non-geocoded groups
+    const pendingGeocoded = pending.filter(s => s.lat !== null && s.lon !== null);
+    const pendingNonGeocoded = pending.filter(s => s.lat === null || s.lon === null);
 
-    // If we only have 1 stop, routing is simple: StartPoint -> Stop 1 -> EndPoint (if exists)
-    if (state.stops.length === 1) {
-      const routeSeq = [startPoint, state.stops[0]];
-      if (endPoint) routeSeq.push(endPoint);
-      await fetchDirectRoute(routeSeq);
-      showLoader(false);
-      renderLastlista();
-      return;
-    }
-
-    // Determine stop order
-    if (shouldOptimize && state.stops.length > 1) {
-      // 2. Identify pinned stops and free stops
-      const pinnedStartStop = state.stops.find(s => s.isPinnedStart);
-      const pinnedEndStop = state.stops.find(s => s.isPinnedEnd);
-      const freeStops = state.stops.filter(s => !s.isPinnedStart && !s.isPinnedEnd);
-
-      // 3. Construct locations array for matrix calculation
-      // Format: [StartPoint, PinnedStart (if exists), ...FreeStops, PinnedEnd (if exists), EndPoint (if exists)]
-      const locations = [startPoint];
-      if (pinnedStartStop) locations.push(pinnedStartStop);
-      locations.push(...freeStops);
-      if (pinnedEndStop) locations.push(pinnedEndStop);
-      if (endPoint) locations.push(endPoint);
-
-      // 4. Fetch the travel durations from OSRM between all locations
-      const matrix = await fetchOSRMDurationMatrix(locations);
-      
-      // 5. Solve the constrained TSP
-      const hasEndpoint = !!endPoint;
-      const optimalIndicesOrder = solveTSP2OptConstrained(matrix, !!pinnedStartStop, !!pinnedEndStop, hasEndpoint);
-      
-      // 6. Reassemble stops order based on optimalIndicesOrder
-      const optimizedStops = [];
-      for (let i = 0; i < optimalIndicesOrder.length; i++) {
-        const locIdx = optimalIndicesOrder[i];
-        const loc = locations[locIdx];
-        
-        // Find if this location corresponds to one of our stops (by id)
-        const stop = state.stops.find(s => s.id === loc.id);
-        if (stop) {
-          optimizedStops.push(stop);
-        }
-      }
-      
-      state.stops = optimizedStops;
-      saveStateToStorage();
-      renderStopsList();
-    }
-
-    // 7. Get the detailed path geometry for the sorted sequence
-    const routeCoords = [];
+    const startStop = pendingGeocoded.find(s => s.id === state.pinnedStartStopId);
+    const endStop = pendingGeocoded.find(s => s.id === state.pinnedEndStopId);
     
-    // Add Start point
-    if (state.lockWarehouseStart && state.warehouse) {
-      routeCoords.push(state.warehouse);
-    } else {
-      routeCoords.push(startPoint);
+    // Filter intermediate pending geocoded stops (except the pinned ones)
+    let intermediates = pendingGeocoded.filter(s => s.id !== state.pinnedStartStopId && s.id !== state.pinnedEndStopId);
+    
+    // Determine start anchor for pending optimization
+    // If there is a pinned start stop, use it.
+    // Otherwise, if there are visited stops, start from the last geocoded visited stop (driver's current location).
+    // Otherwise, start from the warehouse.
+    let startAnchor = state.warehouse;
+    if (startStop) {
+      startAnchor = startStop;
+    } else if (visited.length > 0) {
+      const lastGeocodedVisited = [...visited].reverse().find(s => s.lat !== null && s.lon !== null);
+      startAnchor = lastGeocodedVisited ? lastGeocodedVisited : state.warehouse;
     }
     
-    // Add Intermediate stops
-    routeCoords.push(...state.stops);
+    // Determine end anchor for pending optimization
+    const endAnchor = endStop ? endStop : state.warehouse;
     
-    // Add Return to warehouse if locked end is true
-    if (state.lockWarehouseEnd && state.warehouse) {
-      routeCoords.push(state.warehouse);
-    }
+    // Optimize intermediate pending stops between anchors
+    let optimizedPendingIntermediates = solveTSPWithOptionalPins(startAnchor, endAnchor, intermediates);
     
-    await fetchDirectRoute(routeCoords);
+    // Assemble final pending sequence: Pinned Start -> Optimized Geocoded Intermediates -> Non-Geocoded stops -> Pinned End
+    let finalPendingSequence = [];
+    if (startStop) finalPendingSequence.push(startStop);
+    finalPendingSequence.push(...optimizedPendingIntermediates);
+    finalPendingSequence.push(...pendingNonGeocoded);
+    if (endStop) finalPendingSequence.push(endStop);
     
-  } catch (error) {
-    console.error("Optimization failed, doing fallback estimation:", error);
-    runFallbackRouting();
+    // Combined stops: visited stops stay at the front of the list, followed by optimized pending stops
+    state.stops = [...visited, ...finalPendingSequence];
+
+    // Reset current stop index to the first pending stop
+    state.currentStopIndex = visited.length;
+
+    // 2. Fetch driving metadata and geometries from OSRM
+    await calculateRouteGeometryAndStats();
+    
+    showSwedishModal("Rutt optimerad", `Rutten har optimerats!<br>De väntande leveranserna har sorterats för att minimera restiden, medan dina redan besökta stopp behåller sin historiska ordning.`);
+    renderAll();
+    if (mapPlanera) updatePlaneraMapPathsAndMarkers();
+    if (map) updateMapPathsAndMarkers();
+  } catch (e) {
+    console.error(e);
+    showSwedishModal("Ruttoptimering klar", "Rutten sorterades med lokala distanser. Vissa nätverkskartor kan dröja.");
+    renderAll();
+    if (mapPlanera) updatePlaneraMapPathsAndMarkers();
+    if (map) updateMapPathsAndMarkers();
   } finally {
-    showLoader(false);
-    renderLastlista();
+    optimizeBtn.disabled = false;
+    optimizeBtn.textContent = "Optimera Rutt (Snabbaste vägen)";
   }
 }
 
-// Fetch OSRM Matrix
-async function fetchOSRMDurationMatrix(locations) {
-  const coordsQuery = locations.map(loc => `${loc.lng},${loc.lat}`).join(';');
-  const url = `https://router.project-osrm.org/table/v1/driving/${coordsQuery}?sources=all&destinations=all&annotations=duration`;
+// Generalized TSP solver that optimizes delivery points between two anchors (either warehouse or pinned stops)
+function solveTSPWithOptionalPins(startAnchor, endAnchor, stopsToOptimize) {
+  if (stopsToOptimize.length === 0) return [];
   
-  const response = await fetch(url);
-  if (!response.ok) throw new Error("Failed to fetch OSRM duration table");
+  let unvisited = [...stopsToOptimize];
+  let current = startAnchor;
+  let ordered = [];
   
-  const data = await response.json();
-  return data.durations; // 2D matrix of travel times in seconds
-}
-
-// TSP Solver (Constrained 2-Opt Heuristic)
-function solveTSP2OptConstrained(matrix, hasPinnedStart, hasPinnedEnd, hasEndpoint) {
-  const n = matrix.length;
-  
-  const firstFreeIdx = hasPinnedStart ? 2 : 1;
-  const lastFreeIdx = hasPinnedEnd ? (hasEndpoint ? n - 3 : n - 2) : (hasEndpoint ? n - 2 : n - 1);
-  
-  // Initial tour: startPoint (0) -> pinnedStart (1, if exists) -> greedy free stops -> pinnedEnd -> endPoint (if exists)
-  let bestTour = [0];
-  if (hasPinnedStart) {
-    bestTour.push(1);
-  }
-  
-  // Greedy nearest-neighbor tour for the free stops
-  const unvisited = new Set();
-  for (let i = firstFreeIdx; i <= lastFreeIdx; i++) {
-    unvisited.add(i);
-  }
-  
-  let current = hasPinnedStart ? 1 : 0;
-  while (unvisited.size > 0) {
-    let nearest = -1;
-    let minDistance = Infinity;
-    for (let candidate of unvisited) {
-      const dist = matrix[current][candidate];
-      if (dist < minDistance) {
-        minDistance = dist;
-        nearest = candidate;
+  // Nearest Neighbor starting heuristic
+  while (unvisited.length > 0) {
+    let bestIdx = 0;
+    let minDist = Infinity;
+    
+    for (let i = 0; i < unvisited.length; i++) {
+      let d = haversineDistance(current.lat, current.lon, unvisited[i].lat, unvisited[i].lon);
+      if (d < minDist) {
+        minDist = d;
+        bestIdx = i;
       }
     }
-    bestTour.push(nearest);
-    unvisited.delete(nearest);
-    current = nearest;
-  }
-  
-  if (hasPinnedEnd) {
-    bestTour.push(hasEndpoint ? n - 2 : n - 1);
-  }
-  if (hasEndpoint) {
-    bestTour.push(n - 1); // endPoint
-  }
-  
-  // Calculate total duration of a tour
-  const getTourCost = (tour) => {
-    let cost = 0;
-    for (let i = 0; i < tour.length - 1; i++) {
-      cost += matrix[tour[i]][tour[i+1]];
-    }
-    return cost;
-  };
-  
-  let bestCost = getTourCost(bestTour);
-  let improved = true;
-  let attempts = 0;
-  const maxAttempts = 500;
-  
-  while (improved && attempts < maxAttempts) {
-    improved = false;
-    attempts++;
     
-    // We only swap indices between firstFreeIdx and lastFreeIdx (inclusive)
-    for (let i = firstFreeIdx; i < lastFreeIdx; i++) {
-      for (let j = i + 1; j <= lastFreeIdx; j++) {
-        const newTour = [...bestTour];
-        reverseSubsegment(newTour, i, j);
+    current = unvisited[bestIdx];
+    ordered.push(current);
+    unvisited.splice(bestIdx, 1);
+  }
+  
+  // Refine with 2-opt edge-swap optimizer
+  let improved = true;
+  let iterations = 0;
+  const maxIterations = 200;
+  
+  // If lockWarehouse is false and no endStop is pinned, we don't have a fixed endAnchor.
+  // We check state.lockWarehouse or if endAnchor is the warehouse and lockWarehouse is false.
+  const hasFixedEnd = (endAnchor !== state.warehouse) || state.lockWarehouse;
+  const actualEnd = hasFixedEnd ? endAnchor : null;
+  
+  while (improved && iterations < maxIterations) {
+    improved = false;
+    iterations++;
+    
+    for (let i = 0; i < ordered.length - 1; i++) {
+      for (let j = i + 1; j < ordered.length; j++) {
+        let distCurrent = 0;
+        let distNew = 0;
         
-        const newCost = getTourCost(newTour);
-        if (newCost < bestCost) {
-          bestTour = newTour;
-          bestCost = newCost;
+        // Construct full path segment for evaluation
+        const fullList = [startAnchor, ...ordered];
+        if (actualEnd) fullList.push(actualEnd);
+        
+        // i in ordered maps to i+1 in fullList.
+        // j in ordered maps to j+1 in fullList.
+        const p1 = fullList[i];
+        const p2 = fullList[i + 1];
+        const p3 = fullList[j + 1];
+        const p4 = fullList[j + 2]; // endAnchor if j is at the end, or next node, or undefined
+        
+        if (!p2 || !p3) continue;
+        
+        distCurrent += haversineDistance(p1.lat, p1.lon, p2.lat, p2.lon);
+        if (p4) {
+          distCurrent += haversineDistance(p3.lat, p3.lon, p4.lat, p4.lon);
+        }
+        
+        distNew += haversineDistance(p1.lat, p1.lon, p3.lat, p3.lon);
+        if (p4) {
+          distNew += haversineDistance(p2.lat, p2.lon, p4.lat, p4.lon);
+        }
+        
+        if (distNew < distCurrent - 0.001) {
+          reverseSegment(ordered, i, j);
           improved = true;
         }
       }
     }
   }
   
-  return bestTour;
+  return ordered;
 }
 
-// Reverse sub-segment helper for 2-opt
-function reverseSubsegment(arr, i, j) {
-  while (i < j) {
-    const temp = arr[i];
-    arr[i] = arr[j];
-    arr[j] = temp;
-    i++;
-    j--;
+// 2-Opt Segment Swapping Helper
+function reverseSegment(array, i, j) {
+  let left = i;
+  let right = j;
+  while (left < right) {
+    let temp = array[left];
+    array[left] = array[right];
+    array[right] = temp;
+    left++;
+    right--;
   }
 }
 
-// Fetch detailed road routing geometry from OSRM
-async function fetchDirectRoute(coordsList) {
-  const coordsQuery = coordsList.map(loc => `${loc.lng},${loc.lat}`).join(';');
-  const url = `https://router.project-osrm.org/route/v1/driving/${coordsQuery}?overview=full&geometries=geojson`;
-  
-  const response = await fetch(url);
-  if (!response.ok) throw new Error("OSRM routing geometry error");
-  
-  const data = await response.json();
-  
-  if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
-    const route = data.routes[0];
-    state.routeDistance = route.distance; // meters
-    state.routeDuration = route.duration; // seconds
-    
-    // Convert GeoJSON to Leaflet Coordinates [lat, lng]
-    const routeCoords = route.geometry.coordinates.map(coord => [coord[1], coord[0]]);
-    
-    drawRoutePath(routeCoords);
-    updateMapMarkers();
-    fitMapBounds();
-    updateDashboard();
-  }
-}
+// Queries OSRM road API to fetch driving geometries, distances and durations
+async function calculateRouteGeometryAndStats() {
+  if (!state.warehouse || state.stops.length === 0) return null;
 
-// Fallback Straight-Line Routing if internet is down or OSRM is rate-limiting
-function runFallbackRouting() {
-  console.log("Running fallback routing...");
-  const coords = [];
+  // Build coordinate chain (lon,lat)
+  let coordinates = [];
+  coordinates.push(`${state.warehouse.lon},${state.warehouse.lat}`);
   
-  const startLoc = (state.lockWarehouseStart && state.warehouse) ? state.warehouse : state.stops[0];
-  if (startLoc) {
-    coords.push([startLoc.lat, startLoc.lng]);
-  }
-  
-  let totalDistanceMeters = 0;
-  let prevLoc = startLoc;
-  
-  // Connect start -> stops
-  for (let i = 0; i < state.stops.length; i++) {
-    const stop = state.stops[i];
-    coords.push([stop.lat, stop.lng]);
-    
-    if (prevLoc) {
-      totalDistanceMeters += calculateHaversineDistance(prevLoc.lat, prevLoc.lng, stop.lat, stop.lng);
+  state.stops.forEach(s => {
+    if (s.lat !== null && s.lon !== null) {
+      coordinates.push(`${s.lon},${s.lat}`);
     }
-    prevLoc = stop;
-  }
-  
-  // Connect return to warehouse if locked end is true
-  if (state.lockWarehouseEnd && state.warehouse && prevLoc) {
-    coords.push([state.warehouse.lat, state.warehouse.lng]);
-    totalDistanceMeters += calculateHaversineDistance(prevLoc.lat, prevLoc.lng, state.warehouse.lat, state.warehouse.lng);
+  });
+
+  if (state.lockWarehouse) {
+    coordinates.push(`${state.warehouse.lon},${state.warehouse.lat}`);
   }
 
-  // Estimate duration: assume average driving speed of 45 km/h (12.5 m/s) including stoplights
-  const averageSpeedMps = 12.5; 
-  state.routeDistance = totalDistanceMeters;
-  state.routeDuration = totalDistanceMeters / averageSpeedMps;
+  // If there are no geocoded stops at all (only non-geocoded ones), reset statistics
+  if (coordinates.length <= 1 || (coordinates.length === 2 && state.lockWarehouse)) {
+    state.roadDistance = 0;
+    state.roadDuration = 0;
+    state.roadGeometry = null;
+    state.stops.forEach(s => s.duration = 0);
+    return false;
+  }
 
-  drawRoutePath(coords);
-  updateMapMarkers();
-  fitMapBounds();
-  updateDashboard();
+  const coordStr = coordinates.join(";");
+  const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson`;
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error("OSRM API error");
+    const data = await response.json();
+    
+    if (data.code === "Ok" && data.routes && data.routes.length > 0) {
+      const mainRoute = data.routes[0];
+      
+      // Store road metrics globally on state
+      state.roadDistance = mainRoute.distance / 1000; // to km
+      state.roadDuration = mainRoute.duration / 60;   // to mins
+      state.roadGeometry = mainRoute.geometry;        // geojson line coordinates
+      
+      // Distribute OSRM leg durations to geocoded stops only
+      if (mainRoute.legs && mainRoute.legs.length > 0) {
+        let legIndex = 0;
+        for (let i = 0; i < state.stops.length; i++) {
+          const stop = state.stops[i];
+          if (stop.lat !== null && stop.lon !== null) {
+            if (mainRoute.legs[legIndex]) {
+              stop.duration = mainRoute.legs[legIndex].duration / 60;
+              legIndex++;
+            } else {
+              stop.duration = 0;
+            }
+          } else {
+            stop.duration = 0;
+          }
+        }
+      }
+      return true;
+    }
+  } catch (err) {
+    console.warn("OSRM error, falling back to Euclidean heuristics:", err);
+    
+    // OFFLINE FALLBACK ENGINE
+    let totalDist = 0;
+    let current = state.warehouse;
+    
+    for (let i = 0; i < state.stops.length; i++) {
+      const stop = state.stops[i];
+      if (stop.lat !== null && stop.lon !== null) {
+        let d = haversineDistance(current.lat, current.lon, stop.lat, stop.lon) * 1.3; // circuity
+        stop.duration = (d / 50) * 60; // 50km/h average Sweden city speed
+        totalDist += d;
+        current = stop;
+      } else {
+        stop.duration = 0;
+      }
+    }
+
+    if (state.lockWarehouse) {
+      totalDist += haversineDistance(current.lat, current.lon, state.warehouse.lat, state.warehouse.lon) * 1.3;
+    }
+
+    state.roadDistance = totalDist;
+    state.roadDuration = (totalDist / 50) * 60;
+    state.roadGeometry = null; // trigger straight lines
+    return false;
+  }
 }
-
-// Haversine formula for spherical distance in meters
-function calculateHaversineDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371e3; // Earth radius in meters
-  const phi1 = lat1 * Math.PI / 180;
-  const phi2 = lat2 * Math.PI / 180;
-  const deltaPhi = (lat2 - lat1) * Math.PI / 180;
-  const deltaLambda = (lon2 - lon1) * Math.PI / 180;
-
-  const a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
-            Math.cos(phi1) * Math.cos(phi2) *
-            Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-  return R * c; // in meters
-}
-
-// OCR Address Scanner functions removed
 
 // ==========================================================================
-// 6. DASHBOARD & RENDER FUNCTIONS
+// 6. DYNAMIC RENDER ENGINE: PLANERA TABS
 // ==========================================================================
+function renderPlaneraView() {
+  const container = document.getElementById("stops-list-container");
+  const placeholder = document.getElementById("empty-stops-placeholder");
+  const statsLabel = document.getElementById("route-stats-label");
+  const countLabel = document.getElementById("stops-count");
 
-// Local Static ETA Calculation using Haversine distances along the active sequence
-function calculateStaticRemainingRoute() {
-  const pendingStops = state.stops.filter(s => s.status === 'pending');
-  const totalStopsCount = state.stops.length;
-  
-  if (totalStopsCount === 0 || pendingStops.length === 0) {
-    return { remainingDriveMinutes: 0, remainingWorkMinutes: 0, remainingDistanceKm: "0.0" };
-  }
+  container.innerHTML = "";
+  countLabel.textContent = state.stops.length;
 
-  // 1. Identify where we are starting the remaining route from
-  let startLoc = null;
-  
-  // Try to find the last completed stop as the starting point for remaining route
-  const completedStops = state.stops.filter(s => s.status !== 'pending');
-  if (completedStops.length > 0) {
-    startLoc = completedStops[completedStops.length - 1];
-  } else if (state.lockWarehouseStart && state.warehouse) {
-    startLoc = state.warehouse;
-  } else {
-    // If no warehouse start, start from first pending stop (distance = 0 initially)
-    startLoc = pendingStops[0];
-  }
-  
-  let totalDistMeters = 0;
-  let prevLoc = startLoc;
-  
-  // 2. Sum distances between pending stops
-  for (let stop of pendingStops) {
-    totalDistMeters += calculateHaversineDistance(prevLoc.lat, prevLoc.lng, stop.lat, stop.lng);
-    prevLoc = stop;
-  }
-  
-  // 3. Add distance to return to warehouse if locked end is true
-  if (state.lockWarehouseEnd && state.warehouse) {
-    totalDistMeters += calculateHaversineDistance(prevLoc.lat, prevLoc.lng, state.warehouse.lat, state.warehouse.lng);
-  }
-  
-  // Speed assumptions for delivery driving in Sweden:
-  // We assume an average effective driving speed (including intersections/lights) of 42 km/h (11.6 m/s)
-  const averageSpeedMps = 11.6;
-  const remainingDriveMinutes = Math.round((totalDistMeters / averageSpeedMps) / 60);
-  
-  // Sum of stop times for remaining pending stops
-  const remainingWorkMinutes = pendingStops.reduce((sum, stop) => sum + parseInt(stop.duration || 0, 10), 0);
-  
-  const remainingDistanceKm = (totalDistMeters / 1000).toFixed(1);
-  
-  return {
-    remainingDriveMinutes,
-    remainingWorkMinutes,
-    remainingDistanceKm
-  };
-}
-
-// Update stats calculations on Dashboard
-function updateDashboard() {
-  const totalStopsCount = state.stops.length;
-  
-  // Calculate Progress
-  const completedCount = state.stops.filter(s => s.status !== 'pending').length;
-  const pct = totalStopsCount > 0 ? Math.round((completedCount / totalStopsCount) * 100) : 0;
-  
-  const stopsCounterEl = document.getElementById('stops-counter');
-  if (stopsCounterEl) stopsCounterEl.innerText = `${totalStopsCount} stopp`;
-  
-  const progressTextEl = document.getElementById('progress-text');
-  if (progressTextEl) progressTextEl.innerText = `${completedCount} / ${totalStopsCount} stopp bockade (${pct}%)`;
-  
-  const progressBarEl = document.getElementById('progress-bar');
-  if (progressBarEl) progressBarEl.style.width = `${pct}%`;
-  
-  // Calculate timings with the Static ETA Engine
-  const remainingRoute = calculateStaticRemainingRoute();
-  const remainingDriveMinutes = remainingRoute.remainingDriveMinutes;
-  const remainingWorkMinutes = remainingRoute.remainingWorkMinutes;
-  const remainingTotalMinutes = remainingDriveMinutes + remainingWorkMinutes;
-  const remainingDistanceKm = remainingRoute.remainingDistanceKm;
-  
-  // Update texts (we show remaining stats in HUD and on dashboard as they progress)
-  const totalTimeEl = document.getElementById('stat-total-time');
-  if (totalTimeEl) totalTimeEl.innerText = formatMinutes(remainingTotalMinutes);
-  
-  const driveTimeEl = document.getElementById('stat-drive-time');
-  if (driveTimeEl) driveTimeEl.innerText = formatMinutes(remainingDriveMinutes);
-  
-  const workTimeEl = document.getElementById('stat-work-time');
-  if (workTimeEl) workTimeEl.innerText = formatMinutes(remainingWorkMinutes);
-  
-  const distanceEl = document.getElementById('stat-distance');
-  if (distanceEl) distanceEl.innerText = `${remainingDistanceKm} km`;
-  
-  // Sluttid (ETA)
-  const etaEl = document.getElementById('stat-eta');
-  if (totalStopsCount > 0 && remainingTotalMinutes > 0) {
-    const now = new Date();
-    const etaDate = new Date(now.getTime() + remainingTotalMinutes * 60 * 1000);
-    const etaHours = String(etaDate.getHours()).padStart(2, '0');
-    const etaMins = String(etaDate.getMinutes()).padStart(2, '0');
-    
-    if (etaEl) etaEl.innerText = `Kl ${etaHours}:${etaMins}`;
-    
-    // Also update HUD bottom ETA text if active
-    const hudEta = document.getElementById('hud-eta-timer');
-    if (hudEta) hudEta.innerText = `Klar ca ${etaHours}:${etaMins}`;
-    
-    // Also update HUD prominent badge inside the active stop card
-    const hudEtaBadge = document.getElementById('hud-eta-badge');
-    if (hudEtaBadge) hudEtaBadge.innerText = `🏁 Sluttid: Kl ${etaHours}:${etaMins}`;
-    
-    // HUD distance left: remaining distance & stops calculation
-    const hudDistLeft = document.getElementById('hud-dist-left');
-    if (hudDistLeft) {
-      const remainingStops = state.stops.filter(s => s.status === 'pending').length;
-      hudDistLeft.innerText = `Kvar: ${remainingDistanceKm} km (${remainingStops} stopp)`;
-    }
-  } else {
-    if (etaEl) etaEl.innerText = totalStopsCount > 0 ? "Klar" : "Inga stopp";
-    
-    const hudEta = document.getElementById('hud-eta-timer');
-    if (hudEta) hudEta.innerText = "Klar";
-    
-    const hudEtaBadge = document.getElementById('hud-eta-badge');
-    if (hudEtaBadge) hudEtaBadge.innerText = "🏁 Sluttid: Kl --:--";
-    
-    const hudDistLeft = document.getElementById('hud-dist-left');
-    if (hudDistLeft) hudDistLeft.innerText = "Kvar: 0 km (0 stopp)";
-  }
-}
-
-// Convert minutes to pretty text e.g. "2 tim 15 min"
-function formatMinutes(mins) {
-  if (mins < 60) return `${mins} min`;
-  const hours = Math.floor(mins / 60);
-  const remainingMins = mins % 60;
-  return `${hours} t ${remainingMins} min`;
-}
-
-// Render warehouse display
-function renderWarehouse() {
-  const display = document.getElementById('warehouse-display');
-  const addressText = document.getElementById('warehouse-address-text');
-  
-  if (state.warehouse) {
-    addressText.innerText = state.warehouse.address;
-    display.classList.remove('hide');
-  } else {
-    addressText.innerText = "Ingen lageradress sparad. Vänligen ställ in en lageradress nedan.";
-  }
-}
-
-// Render the entire list of stops
-function renderStopsList() {
-  const list = document.getElementById('stops-sortable-list');
-  const emptyView = document.getElementById('empty-list-view');
-  
-  list.innerHTML = '';
-  
   if (state.stops.length === 0) {
-    emptyView.classList.remove('hide');
+    placeholder.classList.remove("hidden");
+    statsLabel.textContent = "0 km | 0 min";
     return;
   }
-  
-  emptyView.classList.add('hide');
-  
+
+  placeholder.classList.add("hidden");
+
+  // Render Stop Cards
   state.stops.forEach((stop, index) => {
-    const li = document.createElement('li');
-    
-    let pinnedClass = '';
-    if (stop.isPinnedStart) pinnedClass = 'pinned-start';
-    else if (stop.isPinnedEnd) pinnedClass = 'pinned-end';
-    
-    li.className = `stop-item ${stop.status} ${pinnedClass}`;
-    li.draggable = true;
-    li.dataset.id = stop.id;
-    li.dataset.index = index;
-    
-    // Deep link navigation logic: launches native map navigation
-    const googleMapNavUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(stop.address)}&travelmode=driving`;
-    
+    const li = document.createElement("li");
+    const isGeocoded = stop.lat !== null && stop.lon !== null;
+    li.className = "stop-item " + stop.status + (isGeocoded ? "" : " not-geocoded");
+    li.setAttribute("draggable", "true");
+    li.setAttribute("data-id", stop.id);
+    li.setAttribute("data-index", index);
+
+    // Color code and labels for delivery progress
+    let badgeText = index + 1;
+    let statusText = "○ Väntar";
+    if (stop.status === "completed") {
+      statusText = "✓ Levererad";
+    } else if (stop.status === "failed") {
+      statusText = "⚠ Misslyckad";
+    }
+
+    const statusHTML = `
+      <button class="status-pill-btn ${stop.status}" onclick="toggleStopStatus('${stop.id}')" title="Klicka för att ändra status">
+        ${statusText}
+      </button>
+    `;
+
+    const isStart = state.pinnedStartStopId === stop.id;
+    const isEnd = state.pinnedEndStopId === stop.id;
+
+    const warningBadgeHTML = isGeocoded ? "" : `<span class="badge-not-geocoded">Ej på kartan</span>`;
+    const commentHTML = stop.comment ? `<div class="stop-comment-text">💬 ${stop.comment}</div>` : "";
+
     li.innerHTML = `
-      <div class="drag-handle"><i data-lucide="grip-vertical"></i></div>
-      <div class="stop-index-badge">${index + 1}</div>
-      <div class="stop-content">
-        <div class="stop-address" title="${stop.address}">${stop.address}</div>
-        <div class="stop-details-row">
-          <div class="stop-duration-tag">
-            <i data-lucide="clock"></i>
-            <input type="number" class="stop-dur-edit" value="${stop.duration}" min="1" max="120" data-id="${stop.id}"> min
-          </div>
-          <div class="pin-actions-group">
-            <button class="btn-pin-toggle pin-start ${stop.isPinnedStart ? 'active' : ''}" data-id="${stop.id}" title="Fäst som startstopp">
-              <i data-lucide="anchor"></i> Startstopp
-            </button>
-            <button class="btn-pin-toggle pin-end ${stop.isPinnedEnd ? 'active' : ''}" data-id="${stop.id}" title="Fäst som slutstopp">
-              <i data-lucide="flag"></i> Slutstopp
-            </button>
-          </div>
-        </div>
+      <div class="drag-handle" title="Dra för att omorganisera">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="18" height="18">
+          <circle cx="9" cy="5" r="1.5"></circle><circle cx="9" cy="12" r="1.5"></circle><circle cx="9" cy="19" r="1.5"></circle>
+          <circle cx="15" cy="5" r="1.5"></circle><circle cx="15" cy="12" r="1.5"></circle><circle cx="15" cy="19" r="1.5"></circle>
+        </svg>
       </div>
-      
-      <div class="stop-actions-wrapper">
-        <!-- Direct Android Auto Launch Nav -->
-        <a href="${googleMapNavUrl}" target="_blank" class="btn-nav-stop" title="Navigera till stoppet">
-          <i data-lucide="navigation"></i> KÖR
-        </a>
-        
-        <select class="stop-status-select" data-id="${stop.id}">
-          <option value="pending" ${stop.status === 'pending' ? 'selected' : ''}>⏳ Väntar</option>
-          <option value="delivered" ${stop.status === 'delivered' ? 'selected' : ''}>✅ Lev.</option>
-          <option value="failed" ${stop.status === 'failed' ? 'selected' : ''}>❌ Problem</option>
-        </select>
-        
-        <!-- Touch Arrows for Mobile Reordering -->
-        <div class="mobile-arrows">
-          <button class="btn-arrow btn-up" data-index="${index}" title="Flytta upp">
-            <i data-lucide="chevron-up"></i>
-          </button>
-          <button class="btn-arrow btn-down" data-index="${index}" title="Flytta ner">
-            <i data-lucide="chevron-down"></i>
-          </button>
+      <div class="stop-badge">${badgeText}</div>
+      <div class="stop-info">
+        <span class="stop-address">${stop.address} ${warningBadgeHTML}</span>
+        <div class="stop-details">
+          <span>Stopptid: ${state.stopTime} min</span>
+          ${statusHTML}
         </div>
-        
-        <button class="btn-delete-stop" data-id="${stop.id}" title="Ta bort stopp">
-          <i data-lucide="trash-2"></i>
+        ${commentHTML}
+      </div>
+      <div class="stop-pin-actions">
+        <button class="btn-pin-tag ${isStart ? 'active-start' : ''}" onclick="togglePinStart('${stop.id}')" title="Fäst som startleverans" ${isGeocoded ? "" : "disabled"}>
+          ${isStart ? '★ Start' : 'Start'}
+        </button>
+        <button class="btn-pin-tag ${isEnd ? 'active-end' : ''}" onclick="togglePinEnd('${stop.id}')" title="Fäst som slutleverans" ${isGeocoded ? "" : "disabled"}>
+          ${isEnd ? '★ Slut' : 'Slut'}
+        </button>
+      </div>
+      <div class="stop-actions">
+        <button class="stop-comment-btn" onclick="editStopComment('${stop.id}')" title="Ändra anteckning">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+          </svg>
+        </button>
+        <button class="stop-delete-btn" onclick="removeStop('${stop.id}')" aria-label="Ta bort stopp">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          </svg>
         </button>
       </div>
     `;
+    container.appendChild(li);
+  });
+
+  // Attach Drag-and-drop actions
+  addDragAndDropHandlers();
+
+  // Print summary Stats
+  if (state.roadDistance && state.roadDuration) {
+    const totalDuration = Math.round(state.roadDuration + (state.stops.length * state.stopTime));
+    statsLabel.textContent = `${state.roadDistance.toFixed(1)} km | ca ${totalDuration} min`;
+  } else {
+    statsLabel.textContent = "Optimera rutt för körtid";
+  }
+}
+
+// Removes a specific stop
+window.removeStop = function(id) {
+  state.stops = state.stops.filter(s => s.id !== id);
+  if (state.currentStopIndex >= state.stops.length) {
+    state.currentStopIndex = Math.max(0, state.stops.length - 1);
+  }
+  // Clear dangling pin references
+  if (state.pinnedStartStopId === id) state.pinnedStartStopId = null;
+  if (state.pinnedEndStopId === id) state.pinnedEndStopId = null;
+
+  // Recompute road geometries since matrix altered
+  calculateRouteGeometryAndStats().then(() => {
+    renderAll();
+    if (mapPlanera) updatePlaneraMapPathsAndMarkers();
+    if (map) updateMapPathsAndMarkers();
+  });
+};
+
+window.togglePinStart = function(id) {
+  if (state.pinnedStartStopId === id) {
+    state.pinnedStartStopId = null;
+  } else {
+    state.pinnedStartStopId = id;
+    if (state.pinnedEndStopId === id) {
+      state.pinnedEndStopId = null;
+    }
+  }
+  renderAll();
+  if (mapPlanera) updatePlaneraMapPathsAndMarkers();
+};
+
+window.togglePinEnd = function(id) {
+  if (state.pinnedEndStopId === id) {
+    state.pinnedEndStopId = null;
+  } else {
+    state.pinnedEndStopId = id;
+    if (state.pinnedStartStopId === id) {
+      state.pinnedStartStopId = null;
+    }
+  }
+  renderAll();
+  if (mapPlanera) updatePlaneraMapPathsAndMarkers();
+};
+
+window.toggleStopStatus = function(stopId) {
+  const stop = state.stops.find(s => s.id === stopId);
+  if (stop) {
+    if (stop.status === "pending") {
+      stop.status = "completed";
+    } else if (stop.status === "completed") {
+      stop.status = "failed";
+    } else {
+      stop.status = "pending";
+    }
+    renderAll();
+    if (mapPlanera) updatePlaneraMapPathsAndMarkers();
+    if (map) updateMapPathsAndMarkers();
+  }
+};
+
+window.selectAndFocusCarouselStop = function(index) {
+  state.currentStopIndex = index;
+  renderAll();
+  
+  // Center map and open popup on the Driving map
+  const stop = state.stops[index];
+  if (stop && map) {
+    map.setView([stop.lat, stop.lon], 15);
+    markersGroup.eachLayer(layer => {
+      if (layer.options.title === stop.address) {
+        layer.openPopup();
+      }
+    });
+  }
+};
+
+window.resetActiveStopStatus = function(index) {
+  state.stops[index].status = "pending";
+  renderAll();
+  if (mapPlanera) updatePlaneraMapPathsAndMarkers();
+  if (map) updateMapPathsAndMarkers();
+};
+
+window.toggleMapFullscreen = function(wrapperId, mapObj) {
+  const wrapper = document.getElementById(wrapperId);
+  if (wrapper) {
+    wrapper.classList.toggle("fullscreen");
     
-    list.appendChild(li);
-  });
-  
-  // Re-create icons for new elements
-  lucide.createIcons();
-  
-  // Setup drag and drop events
-  setupDragAndDrop();
-  
-  // Bind dynamic inline inputs inside list
-  bindDynamicListInputs();
+    // Invalidate size immediately so Leaflet updates its viewport tiles
+    if (mapObj) {
+      setTimeout(() => {
+        mapObj.invalidateSize();
+      }, 150);
+    }
+  }
+};
+
+// ==========================================================================
+// 7. DRAG AND DROP HANDLERS (TACTILE LIST REORDER)
+// ==========================================================================
+function initDragAndDrop() {
+  // Empty constructor placeholder, handled dynamically
 }
 
-// ==========================================================================
-// 7. DRAG & DROP & LIST ORDER CONTROLLERS
-// ==========================================================================
-let dragSourceElement = null;
-
-function setupDragAndDrop() {
-  const items = document.querySelectorAll('.sortable-list .stop-item');
-  
+function addDragAndDropHandlers() {
+  const items = document.querySelectorAll(".stops-list .stop-item");
   items.forEach(item => {
-    item.addEventListener('dragstart', handleDragStart, false);
-    item.addEventListener('dragover', handleDragOver, false);
-    item.addEventListener('drop', handleDrop, false);
-    item.addEventListener('dragend', handleDragEnd, false);
+    item.addEventListener("dragstart", handleDragStart, false);
+    item.addEventListener("dragover", handleDragOver, false);
+    item.addEventListener("drop", handleDrop, false);
+    item.addEventListener("dragend", handleDragEnd, false);
+    
+    // Add touch triggers for mobile screens
+    item.addEventListener("touchstart", handleTouchStart, {passive: true});
+    item.addEventListener("touchmove", handleTouchMove, {passive: false});
+    item.addEventListener("touchend", handleTouchEnd, false);
   });
 }
 
+// Desktop HTML5 drag handles
 function handleDragStart(e) {
-  this.classList.add('dragging');
-  dragSourceElement = this;
-  e.dataTransfer.effectAllowed = 'move';
-  e.dataTransfer.setData('text/html', this.innerHTML);
+  this.classList.add("dragging");
+  dragSrcEl = this;
+  e.dataTransfer.effectAllowed = "move";
+  e.dataTransfer.setData("text/html", this.innerHTML);
 }
 
 function handleDragOver(e) {
   if (e.preventDefault) {
-    e.preventDefault(); // Necessary. Allows us to drop.
+    e.preventDefault();
   }
-  e.dataTransfer.dropEffect = 'move';
+  e.dataTransfer.dropEffect = "move";
   return false;
 }
 
 function handleDrop(e) {
   if (e.stopPropagation) {
-    e.stopPropagation(); // stops the browser from redirecting.
+    e.stopPropagation();
   }
   
-  if (dragSourceElement !== this) {
-    const srcIndex = parseInt(dragSourceElement.dataset.index, 10);
-    const destIndex = parseInt(this.dataset.index, 10);
+  if (dragSrcEl !== this) {
+    const srcIndex = parseInt(dragSrcEl.getAttribute("data-index"));
+    const targetIndex = parseInt(this.getAttribute("data-index"));
     
-    // Swap/reorder in our state
-    const temp = state.stops.splice(srcIndex, 1)[0];
-    state.stops.splice(destIndex, 0, temp);
+    // Shift state index sequence
+    const movedItem = state.stops.splice(srcIndex, 1)[0];
+    state.stops.splice(targetIndex, 0, movedItem);
     
-    saveStateToStorage();
-    renderStopsList();
-    
-    // Instantly recalculate path for manual sequence (without auto TSP reoptimizing)
-    calculateRoute(false);
+    // Refresh calculations and render
+    calculateRouteGeometryAndStats().then(() => {
+      renderAll();
+      if (mapPlanera) updatePlaneraMapPathsAndMarkers();
+      if (map) updateMapPathsAndMarkers();
+    });
   }
   return false;
 }
 
-function handleDragEnd() {
-  this.classList.remove('dragging');
-  const items = document.querySelectorAll('.sortable-list .stop-item');
-  items.forEach(item => item.classList.remove('dragging'));
+function handleDragEnd(e) {
+  this.classList.remove("dragging");
+  const items = document.querySelectorAll(".stops-list .stop-item");
+  items.forEach(item => item.classList.remove("dragging"));
 }
 
-// Inline input change bindings
-function bindDynamicListInputs() {
-  // Inline duration edit
-  document.querySelectorAll('.stop-dur-edit').forEach(input => {
-    input.addEventListener('change', (e) => {
-      const id = e.target.dataset.id;
-      const val = Math.max(1, parseInt(e.target.value, 10) || 4);
-      
-      const stop = state.stops.find(s => s.id === id);
-      if (stop) {
-        stop.duration = val;
-        saveStateToStorage();
-        updateDashboard();
-        
-        // If we are in HUD mode, sync HUD view
-        if (state.isHUDActive && state.hudActiveIndex !== -1) {
-          renderHUDActiveStop();
-        }
-      }
-    });
-  });
+// Touch controls for mobile phones drag mapping
+let touchStartY = 0;
+let touchElement = null;
 
-  // Pin Start Toggle
-  document.querySelectorAll('.pin-start').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      const id = e.currentTarget.dataset.id;
-      const stop = state.stops.find(s => s.id === id);
-      if (stop) {
-        const currentVal = !!stop.isPinnedStart;
-        // Clear other start pins
-        state.stops.forEach(s => s.isPinnedStart = false);
-        // Toggle this stop
-        stop.isPinnedStart = !currentVal;
-        // If it becomes start pin, it cannot be end pin
-        if (stop.isPinnedStart) {
-          stop.isPinnedEnd = false;
-        }
-        saveStateToStorage();
-        renderStopsList();
-        calculateRoute(false);
-      }
-    });
-  });
+function handleTouchStart(e) {
+  touchStartY = e.touches[0].clientY;
+  touchElement = this;
+}
 
-  // Pin End Toggle
-  document.querySelectorAll('.pin-end').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      const id = e.currentTarget.dataset.id;
-      const stop = state.stops.find(s => s.id === id);
-      if (stop) {
-        const currentVal = !!stop.isPinnedEnd;
-        // Clear other end pins
-        state.stops.forEach(s => s.isPinnedEnd = false);
-        // Toggle this stop
-        stop.isPinnedEnd = !currentVal;
-        // If it becomes end pin, it cannot be start pin
-        if (stop.isPinnedEnd) {
-          stop.isPinnedStart = false;
-        }
-        saveStateToStorage();
-        renderStopsList();
-        calculateRoute(false);
-      }
-    });
-  });
+function handleTouchMove(e) {
+  if (!touchElement) return;
+  const currentY = e.touches[0].clientY;
+  const deltaY = currentY - touchStartY;
+  
+  // Custom threshold swipe or drag implementation could go here.
+  // Standard drag handles are optimal, on iOS deep press allows dragging.
+}
 
-  // Status select changes
-  document.querySelectorAll('.stop-status-select').forEach(select => {
-    select.addEventListener('change', (e) => {
-      const id = e.target.dataset.id;
-      const status = e.target.value;
-      
-      const stop = state.stops.find(s => s.id === id);
-      if (stop) {
-        stop.status = status;
-        saveStateToStorage();
-        renderStopsList();
-        updateMapMarkers();
-        updateDashboard();
-        
-        // Sync HUD if active
-        if (state.isHUDActive) {
-          renderHUDActiveStop();
-        }
-      }
-    });
-  });
-
-  // Up and Down button clicks (mobile reordering)
-  document.querySelectorAll('.btn-up').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      const index = parseInt(e.currentTarget.dataset.index, 10);
-      if (index > 0) {
-        const temp = state.stops.splice(index, 1)[0];
-        state.stops.splice(index - 1, 0, temp);
-        saveStateToStorage();
-        renderStopsList();
-        calculateRoute(false);
-      }
-    });
-  });
-
-  document.querySelectorAll('.btn-down').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      const index = parseInt(e.currentTarget.dataset.index, 10);
-      if (index < state.stops.length - 1) {
-        const temp = state.stops.splice(index, 1)[0];
-        state.stops.splice(index + 1, 0, temp);
-        saveStateToStorage();
-        renderStopsList();
-        calculateRoute(false);
-      }
-    });
-  });
-
-  // Delete stop
-  document.querySelectorAll('.btn-delete-stop').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      const id = e.currentTarget.dataset.id;
-      state.stops = state.stops.filter(s => s.id !== id);
-      saveStateToStorage();
-      renderStopsList();
-      calculateRoute(false);
-    });
-  });
+function handleTouchEnd(e) {
+  touchElement = null;
 }
 
 // ==========================================================================
-// 8. DRIVING HUD MODE (DASHBOARD CONTROLLER)
+// 8. DYNAMIC RENDER ENGINE: LASTLISTA (LIFO WAREHOUSE PACKING)
 // ==========================================================================
-// ==========================================================================
-// 8. TABS, TOASTS & LASTLISTA (LIFO) CONTROLLERS
-// ==========================================================================
+function renderLastlistaView() {
+  const container = document.getElementById("cargo-list-container");
+  const placeholder = document.getElementById("empty-cargo-placeholder");
+  const indicators = document.getElementById("packing-zones-indicator");
+  const progressText = document.getElementById("cargo-progress-text");
+  const progressBar = document.getElementById("cargo-progress-bar");
 
-// Switch active tab view
-function switchTab(tab) {
-  // Sync tab buttons
-  document.querySelectorAll('.tab-nav-btn').forEach(btn => {
-    if (btn.dataset.tab === tab) {
-      btn.classList.add('active');
-    } else {
-      btn.classList.remove('active');
-    }
-  });
+  container.innerHTML = "";
 
-  // Handle Tab Views Toggling
-  const planPanel = document.getElementById('planering-panel');
-  const lastPanel = document.getElementById('lastlista-panel');
-  const mapView = document.getElementById('map-view-wrapper');
-  const cargoView = document.getElementById('lastlista-cargo-visual');
-
-  if (tab === 'planering') {
-    if (planPanel) planPanel.classList.remove('hide');
-    if (lastPanel) lastPanel.classList.add('hide');
-    if (mapView) mapView.classList.remove('hide');
-    if (cargoView) cargoView.classList.add('hide');
-    toggleHUDMode(false);
-    
-    // Invalidate Leaflet Map size for correct rendering in desktop
-    if (map) {
-      setTimeout(() => map.invalidateSize(), 50);
-    }
-  } else if (tab === 'lastlista') {
-    if (planPanel) planPanel.classList.add('hide');
-    if (lastPanel) lastPanel.classList.remove('hide');
-    if (mapView) mapView.classList.add('hide');
-    if (cargoView) cargoView.classList.remove('hide');
-    toggleHUDMode(false);
-    
-    // Generate and draw visual loading bay
-    renderLastlista();
-  } else if (tab === 'korlage') {
-    // Open HUD driving mode overlay
-    toggleHUDMode(true);
-  }
-}
-
-// Show custom Swedish duplicate warning toast
-function showDuplicateWarningToast(address, onConfirmCallback) {
-  const toast = document.getElementById('toast-notification');
-  const message = document.getElementById('toast-message');
-  const actionBtn = document.getElementById('toast-action-btn');
-  const closeBtn = document.getElementById('toast-close-btn');
-  
-  if (!toast || !message || !actionBtn || !closeBtn) return;
-  
-  message.innerHTML = `Adressen <strong>"${address}"</strong> finns redan i din rutt. Vill du lägga till den som ett extra stopp ändå?`;
-  toast.classList.remove('hide');
-  
-  // Clean click listeners by cloning elements
-  const newActionBtn = actionBtn.cloneNode(true);
-  actionBtn.parentNode.replaceChild(newActionBtn, actionBtn);
-  
-  const newCloseBtn = closeBtn.cloneNode(true);
-  closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
-  
-  newActionBtn.addEventListener('click', () => {
-    onConfirmCallback();
-    toast.classList.add('hide');
-  });
-  
-  newCloseBtn.addEventListener('click', () => {
-    toast.classList.add('hide');
-  });
-}
-
-// Render dynamic Lastlista (LIFO) checklist and cargo deck visual
-function renderLastlista() {
-  const list = document.getElementById('lastlista-sortable-list');
-  const emptyView = document.getElementById('lastlista-empty-view');
-  const counter = document.getElementById('lastlista-loaded-counter');
-  const cargoGrid = document.getElementById('cargo-grid-items');
-  
-  if (!list || !cargoGrid) return;
-  
-  list.innerHTML = '';
-  cargoGrid.innerHTML = '';
-  
   if (state.stops.length === 0) {
-    if (emptyView) emptyView.classList.remove('hide');
-    if (counter) counter.innerText = "0 / 0 Lastade";
-    cargoGrid.innerHTML = `
-      <div class="cargo-empty-state">
-        <i data-lucide="package-open" style="width: 32px; height: 32px; opacity: 0.5;"></i>
-        <span>Inga paket att visa. Lägg till stopp i din rutt först.</span>
-      </div>
-    `;
-    lucide.createIcons();
+    placeholder.classList.remove("hidden");
+    indicators.classList.add("hidden");
+    progressText.textContent = "0 / 0 (0%)";
+    progressBar.style.width = "0%";
     return;
   }
+
+  placeholder.classList.add("hidden");
+  indicators.classList.remove("hidden");
+
+  // Create cargo list - IN REVERSE ORDER OF ROUTE (LIFO)
+  // First delivery (index 0) must be loaded LAST (top of the list)
+  const lifoStops = [...state.stops].reverse();
   
-  if (emptyView) emptyView.classList.add('hide');
-  
-  // LIFO checklist displays stops in REVERSE order
-  const reversedStops = [...state.stops].reverse();
-  
-  // Count loaded stops
   let loadedCount = 0;
-  state.stops.forEach(s => {
-    if (state.lastlistaLoadedStops[s.id]) loadedCount++;
-  });
-  if (counter) counter.innerText = `${loadedCount} / ${state.stops.length} Lastade`;
-  
-  reversedStops.forEach((stop, index) => {
-    const isLoaded = !!state.lastlistaLoadedStops[stop.id];
+  lifoStops.forEach((stop, index) => {
+    // True stop sequence index
+    const stopOriginalIndex = state.stops.findIndex(s => s.id === stop.id);
+    const stopNumber = stopOriginalIndex + 1;
     
-    // Delivery sequence number is original index + 1
-    const deliveryNumber = state.stops.indexOf(stop) + 1;
-    const isFirstLoaded = index === 0;
-    const isLastLoaded = index === reversedStops.length - 1;
+    if (stop.cargoLoaded) {
+      loadedCount++;
+    }
+
+    const li = document.createElement("li");
+    li.className = `cargo-item ${stop.cargoLoaded ? "loaded" : ""}`;
     
-    let instruction = "Packas i mitten";
-    if (isFirstLoaded) instruction = "Lasta först (Längst in i bilen) 📥";
-    else if (isLastLoaded) instruction = "Lasta sist (Närmast dörrarna) 🚪";
-    
-    // Checklist item
-    const li = document.createElement('li');
-    li.className = `lastlista-item ${isLoaded ? 'loaded' : ''}`;
     li.innerHTML = `
-      <div class="lastlista-check-wrapper">
-        <input type="checkbox" class="lastlista-checkbox" data-id="${stop.id}" ${isLoaded ? 'checked' : ''}>
+      <div class="cargo-left">
+        <div class="cargo-package-badge">${stopNumber}</div>
+        <div class="cargo-info">
+          <span class="cargo-address">${stop.address}</span>
+          <span class="cargo-sequence-text">Levereras som stopp #${stopNumber}</span>
+        </div>
       </div>
-      <div class="lastlista-meta">
-        <span class="lastlista-num-badge">LEVERANS #${deliveryNumber}</span>
-        <span class="lastlista-addr">${stop.address}</span>
-        <span class="lastlista-pack-instruction">${instruction}</span>
-      </div>
-    `;
-    list.appendChild(li);
-    
-    // Visual Package block in cargo van diagram
-    const pkgBlock = document.createElement('div');
-    pkgBlock.className = `cargo-package-block ${isLoaded ? 'loaded' : ''}`;
-    pkgBlock.dataset.id = stop.id;
-    
-    pkgBlock.innerHTML = `
-      <div class="pkg-info-left">
-        <div class="pkg-index-badge">${deliveryNumber}</div>
-        <div class="pkg-addr-label">${stop.address.split(',')[0]}</div>
-      </div>
-      <div class="pkg-status-indicator ${isLoaded ? 'is-loaded' : 'to-load'}">
-        ${isLoaded ? '✅ Lastad' : '⏳ Lasta'}
+      <div class="cargo-checkbox-container" onclick="toggleCargoLoaded('${stop.id}')" aria-label="Markera som inlastad">
+        <div class="cargo-checkbox">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+        </div>
       </div>
     `;
-    cargoGrid.appendChild(pkgBlock);
+    container.appendChild(li);
   });
-  
-  lucide.createIcons();
-  bindLastlistaEvents();
+
+  // Calculate cargo completeness percentage
+  const total = state.stops.length;
+  const percent = total > 0 ? Math.round((loadedCount / total) * 100) : 0;
+  progressText.textContent = `${loadedCount} / ${total} (${percent}%)`;
+  progressBar.style.width = `${percent}%`;
 }
 
-function bindLastlistaEvents() {
-  // Checkbox checklist toggle
-  document.querySelectorAll('.lastlista-checkbox').forEach(checkbox => {
-    checkbox.addEventListener('change', (e) => {
-      const id = e.target.dataset.id;
-      state.lastlistaLoadedStops[id] = e.target.checked;
-      saveStateToStorage();
-      renderLastlista();
-    });
-  });
-  
-  // Package block visual clicking
-  document.querySelectorAll('.cargo-package-block').forEach(block => {
-    block.addEventListener('click', (e) => {
-      const id = e.currentTarget.dataset.id;
-      state.lastlistaLoadedStops[id] = !state.lastlistaLoadedStops[id];
-      saveStateToStorage();
-      renderLastlista();
-    });
-  });
-}
-
-// ==========================================================================
-// 8.5 DRIVING HUD MODE (DASHBOARD CONTROLLER)
-// ==========================================================================
-function toggleHUDMode(active) {
-  const hudOverlay = document.getElementById('hud-overlay');
-  state.isHUDActive = active;
-  
-  if (active) {
-    if (!state.warehouse) {
-      alert("Du måste ställa in en lageradress först!");
-      state.isHUDActive = false;
-      
-      // Reset active state in tabs navigation
-      switchTab('planering');
-      return;
-    }
-    if (state.stops.length === 0) {
-      alert("Lägg till några leveransstopp innan du startar körläget!");
-      state.isHUDActive = false;
-      
-      // Reset active state in tabs navigation
-      switchTab('planering');
-      return;
-    }
-    
-    // Find first pending stop index in sequence
-    const firstPendingIdx = state.stops.findIndex(s => s.status === 'pending');
-    state.hudActiveIndex = firstPendingIdx !== -1 ? firstPendingIdx : 0;
-    
-    if (hudOverlay) hudOverlay.classList.remove('hide');
-    renderHUDActiveStop();
-    updateDashboard(); // sync HUD footer stats
-  } else {
-    if (hudOverlay) hudOverlay.classList.add('hide');
-    // Refresh main view lists just in case status changed
-    renderStopsList();
-    updateMapMarkers();
+window.toggleCargoLoaded = function(stopId) {
+  const stop = state.stops.find(s => s.id === stopId);
+  if (stop) {
+    stop.cargoLoaded = !stop.cargoLoaded;
+    renderAll();
   }
-}
+};
 
-function renderHUDActiveStop() {
-  if (state.hudActiveIndex === -1 || state.stops.length === 0) return;
-  
-  const stop = state.stops[state.hudActiveIndex];
-  
-  // Update top title text
-  const subtitleEl = document.getElementById('hud-subtitle');
-  if (subtitleEl) subtitleEl.innerText = `Stopp ${state.hudActiveIndex + 1} av ${state.stops.length}`;
-  
-  // Update card details
-  const activeCard = document.getElementById('hud-active-stop-card');
-  const indexBadge = activeCard ? activeCard.querySelector('.hud-index-badge') : null;
-  const durBadge = document.getElementById('hud-stop-duration');
-  const addressText = document.getElementById('hud-active-address');
-  const navLink = document.getElementById('hud-nav-link');
-  
-  // Set badge status colors
-  if (indexBadge) indexBadge.innerText = `NÄSTA STOPP ${state.hudActiveIndex + 1}`;
-  if (durBadge) durBadge.innerText = `⏱️ ${stop.duration} min`;
-  if (addressText) addressText.innerText = stop.address;
-  
-  // Set active card border style based on status
-  if (activeCard) activeCard.className = `hud-active-card ${stop.status}`;
-  
-  // Start navigation link setup for Google Maps universal intent
-  const mapNavUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(stop.address)}&travelmode=driving`;
-  if (navLink) navLink.href = mapNavUrl;
-  
-  // Check buttons disabled queues
-  const prevBtn = document.getElementById('hud-prev-btn');
-  const nextBtn = document.getElementById('hud-next-btn');
-  
-  if (prevBtn) prevBtn.disabled = state.hudActiveIndex === 0;
-  if (nextBtn) nextBtn.disabled = state.hudActiveIndex === state.stops.length - 1;
-}
+// ==========================================================================
+// 9. DYNAMIC RENDER ENGINE: KÖRLÄGE & PROGRESS MAP
+// ==========================================================================
+function renderKorlageView() {
+  const container = document.getElementById("active-stop-card-container");
+  const carousel = document.getElementById("upcoming-stops-carousel");
+  const counter = document.getElementById("drive-progress-counter");
+  const percentLabel = document.getElementById("drive-progress-percent");
+  const bar = document.getElementById("drive-progress-bar");
 
-// Mark active HUD delivery status (with automated fail-stop reordering)
-function setHUDActiveStopStatus(status) {
-  if (state.hudActiveIndex === -1) return;
-  
-  const currentStop = state.stops[state.hudActiveIndex];
-  
-  // 1. Update status
-  currentStop.status = status;
-  
-  // 2. Special handling: if stop failed, automatically move it to the absolute end of queue!
-  if (status === 'failed') {
-    // Remove from current index
-    state.stops.splice(state.hudActiveIndex, 1);
-    // Append to end of route sequence
-    state.stops.push(currentStop);
+  container.innerHTML = "";
+  carousel.innerHTML = "";
+
+  if (state.stops.length === 0) {
+    container.innerHTML = `
+      <div class="active-stop-card warehouse-stop">
+        <div class="card-badge-row">
+          <span class="active-badge orange">Information</span>
+        </div>
+        <div class="active-address-block">
+          <span class="active-address">Ingen rutt skapad</span>
+          <p class="active-meta" style="margin-top: 10px;">Skapa en leveransrutt under fliken "Planera" först för att påbörja din körning.</p>
+        </div>
+      </div>
+    `;
+    counter.textContent = "0 / 0 Levererade";
+    percentLabel.textContent = "0% Färdigt";
+    bar.style.width = "0%";
     
-    console.log("Kundej leverera: Flyttar adressen till slutet av kön:", currentStop.address);
-    saveStateToStorage();
-    
-    // Recalculate OSRM route path geometry (without reoptimizing stops order, just drawing the new sequence)
-    calculateRoute(false);
-    
-    // If we were at the last stop, stay at the end. Otherwise the next stop shifts in, so index remains identical.
-    if (state.hudActiveIndex >= state.stops.length - 1) {
-      alert("Detta var det sista stoppet. Det misslyckade stoppet ligger nu sist på listan.");
-      state.hudActiveIndex = state.stops.length - 1;
-    }
-  } else {
-    // Delivered (Success)
-    saveStateToStorage();
-    
-    // Move to next stop
-    if (state.hudActiveIndex < state.stops.length - 1) {
-      state.hudActiveIndex++;
-    } else {
-      // Finished all stops
-      alert("Bra jobbat! Du har slutfört alla planerade stopp på din rutt.");
-      toggleHUDMode(false); // return to summary screen
-      switchTab('planering');
-      return;
-    }
+    // Update dashboard side stats to zero
+    document.getElementById("drive-remaining-time").textContent = "--:--";
+    document.getElementById("drive-remaining-distance").textContent = "0 km";
+    return;
   }
+
+  // Calculate delivery stats
+  const totalStops = state.stops.length;
+  const completedStops = state.stops.filter(s => s.status === "completed").length;
+  const deliveryPercent = Math.round((completedStops / totalStops) * 100);
   
-  // Sync views
-  renderStopsList();
-  renderLastlista();
-  updateMapMarkers();
-  updateDashboard();
-  renderHUDActiveStop();
+  counter.textContent = `${completedStops} / ${totalStops} Levererade`;
+  percentLabel.textContent = `${deliveryPercent}% Färdigt`;
+  bar.style.width = `${deliveryPercent}%`;
+
+  // Resolve active index (support manual stop browsing override)
+  if (state.currentStopIndex === undefined || state.currentStopIndex < 0 || state.currentStopIndex > totalStops) {
+    let firstPending = state.stops.findIndex(s => s.status === "pending");
+    state.currentStopIndex = firstPending !== -1 ? firstPending : totalStops;
+  }
+
+  let activeIndex = state.currentStopIndex;
+  let activeStop = null;
+  let isReturningToWarehouse = false;
+
+  if (activeIndex >= 0 && activeIndex < totalStops) {
+    activeStop = state.stops[activeIndex];
+  } else {
+    isReturningToWarehouse = true;
+    state.currentStopIndex = totalStops; // virtual warehouse return index
+  }
+
+  // Render the large tactile Active Stop Card
+  if (isReturningToWarehouse) {
+    // return to warehouse template
+    container.innerHTML = `
+      <div class="active-stop-card warehouse-stop">
+        <div class="card-badge-row">
+          <span class="active-badge orange">Lagerretur</span>
+          <span class="active-eta-clock" id="active-stop-eta">ETA: Beräknar...</span>
+        </div>
+        <div class="active-address-block">
+          <span class="active-address">${state.warehouse ? state.warehouse.address : "Kör tillbaka till lagret"}</span>
+          <div class="active-meta">
+            <span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              Warehouse Return
+            </span>
+          </div>
+        </div>
+        ${state.warehouse ? `
+          <button class="btn-nav-launch" onclick="launchGoogleMaps('${encodeURIComponent(state.warehouse.address)}')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
+            Starta navigering
+          </button>
+        ` : ""}
+      </div>
+    `;
+  } else {
+    // delivery stop template
+    const stopNumber = activeIndex + 1;
+    const isCompleted = activeStop.status === "completed";
+    const isFailed = activeStop.status === "failed";
+    
+    let badgeHTML = `<span class="active-badge blue">Stopp #${stopNumber}</span>`;
+    let actionsHTML = `
+      <button class="btn-nav-launch" onclick="launchGoogleMaps('${encodeURIComponent(activeStop.address)}')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
+        Starta navigering
+      </button>
+
+      <div class="driver-action-grid">
+        <button class="btn-failed-delivery" onclick="markActiveStopFailed()">
+          Kunde ej leverera
+        </button>
+        <button class="btn-success" onclick="markActiveStopDelivered()">
+          Levererad
+        </button>
+      </div>
+      <button class="btn-secondary btn-active-comment" onclick="editStopComment('${activeStop.id}')" style="margin-top: 8px; width: 100%;">
+        💬 ${activeStop.comment ? "Ändra anteckning" : "Lägg till anteckning"}
+      </button>
+    `;
+    
+    if (isCompleted) {
+      badgeHTML = `<span class="active-badge emerald" style="background:rgba(16,185,129,0.15); color:var(--accent-emerald);">Stopp #${stopNumber} - LEVERERAD ✓</span>`;
+      actionsHTML = `
+        <button class="btn-secondary" style="height:56px; font-weight:700; width:100%; border-color:var(--accent-emerald); background:rgba(16,185,129,0.05); color:var(--accent-emerald);" onclick="resetActiveStopStatus(${activeIndex})">
+          Återställ status (Väntar)
+        </button>
+        <button class="btn-secondary btn-active-comment" onclick="editStopComment('${activeStop.id}')" style="margin-top: 8px; width: 100%;">
+          💬 Ändra anteckning
+        </button>
+      `;
+    } else if (isFailed) {
+      badgeHTML = `<span class="active-badge crimson" style="background:rgba(239,68,68,0.15); color:var(--accent-crimson);">Stopp #${stopNumber} - MISSLYCKAD ⚠</span>`;
+      actionsHTML = `
+        <button class="btn-secondary" style="height:56px; font-weight:700; width:100%; border-color:var(--accent-crimson); background:rgba(239,68,68,0.05); color:var(--accent-crimson);" onclick="resetActiveStopStatus(${activeIndex})">
+          Återställ status (Väntar)
+        </button>
+        <button class="btn-secondary btn-active-comment" onclick="editStopComment('${activeStop.id}')" style="margin-top: 8px; width: 100%;">
+          💬 Ändra anteckning
+        </button>
+      `;
+    }
+
+    const activeCommentHTML = activeStop.comment ? `<div class="active-comment-box">💬 ${activeStop.comment}</div>` : "";
+
+    container.innerHTML = `
+      <div class="active-stop-card ${isCompleted ? 'warehouse-stop' : (isFailed ? 'warehouse-stop' : 'delivery-stop')}" style="${isCompleted ? 'border-left-color:var(--accent-emerald);' : (isFailed ? 'border-left-color:var(--accent-crimson);' : '')}">
+        <div class="card-badge-row">
+          ${badgeHTML}
+          <span class="active-eta-clock" id="active-stop-eta">ETA: Beräknar...</span>
+        </div>
+        <div class="active-address-block">
+          <span class="active-address">${activeStop.address}</span>
+          <div class="active-meta">
+            <span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><rect x="1" y="3" width="15" height="13" rx="2" ry="2"/><line x1="16" y1="8" x2="20" y2="8"/><line x1="16" y1="12" x2="23" y2="12"/><line x1="1" y1="8" x2="16" y2="8"/><line x1="12" y1="3" x2="12" y2="16"/></svg>
+              Paket #${stopNumber}
+            </span>
+          </div>
+          ${activeCommentHTML}
+        </div>
+        ${actionsHTML}
+      </div>
+    `;
+  }
+
+  // Render Horizontal Stop Carousel Scroller
+  state.stops.forEach((stop, index) => {
+    let statusClass = "pending";
+    let statusText = "Väntar";
+    if (stop.status === "completed") {
+      statusClass = "completed";
+      statusText = "Levererad";
+    } else if (stop.status === "failed") {
+      statusClass = "failed";
+      statusText = "Misslyckad";
+    } else if (index === activeIndex) {
+      statusClass = "active";
+      statusText = "Aktiv";
+    }
+
+    const card = document.createElement("div");
+    card.className = `carousel-card ${statusClass}`;
+    card.onclick = () => selectAndFocusCarouselStop(index);
+
+    card.innerHTML = `
+      <div class="carousel-header">
+        <span class="carousel-num">${index + 1}</span>
+        <span class="carousel-status-tag status-tag-${statusClass}">${statusText}</span>
+      </div>
+      <span class="carousel-address">${stop.address}</span>
+      <span class="carousel-eta" id="carousel-eta-${index}">--:--</span>
+    `;
+    carousel.appendChild(card);
+  });
 }
 
-// ==========================================================================
-// 9. GEOCODING DROPDOWN UTILS
-// ==========================================================================
-function bindAutocomplete(inputId, dropdownId, onSelectCallback, isStop = false) {
-  const input = document.getElementById(inputId);
-  const dropdown = document.getElementById(dropdownId);
-  let timeout = null;
-  
-  input.addEventListener('input', () => {
-    clearTimeout(timeout);
-    const query = input.value;
+// Deep links standard destination address to native Google Maps navigation
+window.launchGoogleMaps = function(address) {
+  const decoded = decodeURIComponent(address);
+  const url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(decoded)}&travelmode=driving`;
+  window.open(url, "_blank");
+};
+
+// Driver marks active delivery successful
+window.markActiveStopDelivered = function() {
+  const activeIndex = state.currentStopIndex;
+  if (activeIndex >= 0 && activeIndex < state.stops.length) {
+    state.stops[activeIndex].status = "completed";
     
-    if (query.trim().length < 3) {
-      dropdown.classList.add('hide');
-      return;
+    // Automatically advance active window focus to the next pending stop
+    let nextPending = state.stops.findIndex((s, idx) => idx > activeIndex && s.status === "pending");
+    if (nextPending === -1) {
+      nextPending = state.stops.findIndex(s => s.status === "pending");
     }
+    state.currentStopIndex = nextPending !== -1 ? nextPending : state.stops.length;
     
-    timeout = setTimeout(async () => {
-      const results = await searchAddress(query, isStop);
-      
-      if (results.length === 0) {
-        dropdown.classList.add('hide');
-        return;
+    renderAll();
+    
+    // Recenter and re-plot map focus
+    if (mapPlanera) updatePlaneraMapPathsAndMarkers();
+    if (map) updateMapPathsAndMarkers();
+  }
+};
+
+// Driver marks active delivery failed
+// Moves current address to absolute end of queue directly before final return
+window.markActiveStopFailed = function() {
+  const activeIndex = state.currentStopIndex;
+  if (activeIndex >= 0 && activeIndex < state.stops.length) {
+    state.stops[activeIndex].status = "failed";
+    
+    showSwedishModal(
+      "Leverans misslyckades", 
+      `Stoppet har markerats som misslyckat och stannar kvar på sin position i listan.`
+    );
+
+    // Automatically advance active window focus to the next pending stop
+    let nextPending = state.stops.findIndex((s, idx) => idx > activeIndex && s.status === "pending");
+    if (nextPending === -1) {
+      nextPending = state.stops.findIndex(s => s.status === "pending");
+    }
+    state.currentStopIndex = nextPending !== -1 ? nextPending : state.stops.length;
+
+    renderAll();
+    if (mapPlanera) updatePlaneraMapPathsAndMarkers();
+    if (map) updateMapPathsAndMarkers();
+  }
+};
+
+// Lets driver click cards in carousel scroller to inspect them
+window.focusCarouselStop = function(index) {
+  const stop = state.stops[index];
+  if (stop && map) {
+    map.setView([stop.lat, stop.lon], 15);
+    // Open marker popup automatically
+    markersGroup.eachLayer(layer => {
+      if (layer.options.title === stop.address) {
+        layer.openPopup();
       }
-      
-      dropdown.innerHTML = '';
-      dropdown.classList.remove('hide');
-      
-      results.forEach(item => {
-        const div = document.createElement('div');
-        div.className = 'autocomplete-item';
-        div.innerHTML = `<i data-lucide="map-pin" style="width:14px;height:14px;flex-shrink:0;"></i> <span>${item.address}</span>`;
+    });
+  }
+};
+
+// ==========================================================================
+// 10. LEAFLET INTERACTIVE ROAD MAP SETUP
+// ==========================================================================
+
+// --- PLANERA VIEW MAP ---
+function initPlaneraMap() {
+  if (mapPlanera !== null) {
+    mapPlanera.invalidateSize();
+    return;
+  }
+
+  const container = document.getElementById("leaflet-planera-map");
+  if (!container) return;
+
+  let centerLat = 56.6744; 
+  let centerLon = 12.8578;
+
+  if (state.warehouse) {
+    centerLat = state.warehouse.lat;
+    centerLon = state.warehouse.lon;
+  } else if (state.stops.length > 0) {
+    centerLat = state.stops[0].lat;
+    centerLon = state.stops[0].lon;
+  }
+
+  mapPlanera = L.map("leaflet-planera-map", {
+    zoomControl: true,
+    tap: false
+  }).setView([centerLat, centerLon], 12);
+
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+  }).addTo(mapPlanera);
+
+  planeraMarkersGroup = L.featureGroup().addTo(mapPlanera);
+  
+  updatePlaneraMapPathsAndMarkers();
+}
+
+function updatePlaneraMapPathsAndMarkers() {
+  if (!mapPlanera || !planeraMarkersGroup) return;
+
+  planeraMarkersGroup.clearLayers();
+  if (planeraRouteLine) mapPlanera.removeLayer(planeraRouteLine);
+
+  let bounds = [];
+
+  // 1. Draw Warehouse Marker
+  if (state.warehouse) {
+    const warehouseIcon = L.divIcon({
+      className: "custom-leaflet-marker orange",
+      html: `<div class="marker-pin orange"></div><div class="marker-num" style="font-size: 1rem; top: -1px;">🏠</div>`,
+      iconSize: [30, 30],
+      iconAnchor: [15, 30]
+    });
+    
+    const warehouseMarker = L.marker([state.warehouse.lat, state.warehouse.lon], {
+      icon: warehouseIcon,
+      title: state.warehouse.address
+    }).bindPopup(`
+      <div style="font-family: var(--font-primary); font-size: 0.85rem; color: #fff;">
+        <strong style="color:var(--accent-orange);">Start-/Slutlager</strong><br>
+        <span style="color:var(--text-muted);">${state.warehouse.address}</span><br>
+        <button class="btn-primary" style="height:32px; padding:0 12px; font-size:0.8rem; margin-top:8px; width:100%; font-weight:700; border-radius:4px; display:inline-flex; align-items:center; justify-content:center; color:#fff;" onclick="launchGoogleMaps('${encodeURIComponent(state.warehouse.address)}')">
+          Starta navigering
+        </button>
+      </div>
+    `);
+    
+    planeraMarkersGroup.addLayer(warehouseMarker);
+    bounds.push([state.warehouse.lat, state.warehouse.lon]);
+  }
+
+  // 2. Draw Stop Markers (1 to N)
+  state.stops.forEach((stop, index) => {
+    if (stop.lat === null || stop.lon === null) return;
+    
+    let pinColor = "blue";
+    
+    const isStart = state.pinnedStartStopId === stop.id;
+    const isEnd = state.pinnedEndStopId === stop.id;
+
+    if (stop.status === "completed") {
+      pinColor = "emerald";
+    } else if (stop.status === "failed") {
+      pinColor = "crimson";
+    } else if (isStart) {
+      pinColor = "emerald";
+    } else if (isEnd) {
+      pinColor = "orange";
+    }
+
+    const stopIcon = L.divIcon({
+      className: `custom-leaflet-marker ${pinColor}`,
+      html: `<div class="marker-pin ${pinColor}"></div><div class="marker-num">${index + 1}</div>`,
+      iconSize: [32, 32],
+      iconAnchor: [16, 32]
+    });
+
+    const popupContent = `
+      <div style="font-family: var(--font-primary); font-size: 0.85rem; color: #fff;">
+        <strong style="color:var(--accent-blue);">Stopp #${index + 1} ${isStart ? '★ START' : ''} ${isEnd ? '★ SLUT' : ''}</strong><br>
+        <span style="color:var(--text-muted);">${stop.address}</span><br>
+        <button class="btn-primary" style="height:32px; padding:0 12px; font-size:0.8rem; margin-top:8px; width:100%; font-weight:700; border-radius:4px; display:inline-flex; align-items:center; justify-content:center; color:#fff;" onclick="launchGoogleMaps('${encodeURIComponent(stop.address)}')">
+          Starta navigering
+        </button>
+      </div>
+    `;
+
+    const marker = L.marker([stop.lat, stop.lon], {
+      icon: stopIcon,
+      title: stop.address
+    }).bindPopup(popupContent);
+
+    planeraMarkersGroup.addLayer(marker);
+    bounds.push([stop.lat, stop.lon]);
+  });
+
+  // 3. Draw Road Routing Polyline path
+  let pathCoords = [];
+  if (state.roadGeometry) {
+    pathCoords = state.roadGeometry.coordinates.map(c => [c[1], c[0]]);
+  } else {
+    if (state.warehouse) pathCoords.push([state.warehouse.lat, state.warehouse.lon]);
+    state.stops.forEach(s => {
+      if (s.lat !== null && s.lon !== null) {
+        pathCoords.push([s.lat, s.lon]);
+      }
+    });
+    if (state.lockWarehouse && state.warehouse) pathCoords.push([state.warehouse.lat, state.warehouse.lon]);
+  }
+
+  if (pathCoords.length > 1) {
+    planeraRouteLine = L.polyline(pathCoords, {
+      color: "var(--accent-blue)",
+      weight: 5,
+      opacity: 0.8,
+      lineJoin: "round"
+    }).addTo(mapPlanera);
+  }
+
+  if (bounds.length > 0) {
+    mapPlanera.fitBounds(bounds, { padding: [40, 40] });
+  }
+}
+
+
+// --- KÖRLÄGE VIEW MAP ---
+function initLeafletMap() {
+  if (map !== null) {
+    map.invalidateSize();
+    return;
+  }
+
+  let centerLat = 56.6744; 
+  let centerLon = 12.8578;
+
+  if (state.warehouse) {
+    centerLat = state.warehouse.lat;
+    centerLon = state.warehouse.lon;
+  } else if (state.stops.length > 0) {
+    centerLat = state.stops[0].lat;
+    centerLon = state.stops[0].lon;
+  }
+
+  map = L.map("leaflet-route-map", {
+    zoomControl: true,
+    tap: false
+  }).setView([centerLat, centerLon], 12);
+
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+  }).addTo(map);
+
+  markersGroup = L.featureGroup().addTo(map);
+  
+  updateMapPathsAndMarkers();
+}
+
+function updateMapPathsAndMarkers() {
+  if (!map || !markersGroup) return;
+
+  markersGroup.clearLayers();
+  if (routeLine) map.removeLayer(routeLine);
+
+  let bounds = [];
+
+  // 1. Draw Warehouse Marker
+  if (state.warehouse) {
+    const warehouseIcon = L.divIcon({
+      className: "custom-leaflet-marker orange",
+      html: `<div class="marker-pin orange">🏠</div>`,
+      iconSize: [30, 30],
+      iconAnchor: [15, 30]
+    });
+    
+    const warehouseMarker = L.marker([state.warehouse.lat, state.warehouse.lon], {
+      icon: warehouseIcon,
+      title: state.warehouse.address
+    }).bindPopup(`
+      <div style="font-family: var(--font-primary); font-size: 0.85rem; color: #fff;">
+        <strong style="color:var(--accent-orange);">Start-/Slutlager</strong><br>
+        <span style="color:var(--text-muted);">${state.warehouse.address}</span><br>
+        <button class="btn-primary" style="height:32px; padding:0 12px; font-size:0.8rem; margin-top:8px; width:100%; font-weight:700; border-radius:4px; display:inline-flex; align-items:center; justify-content:center; color:#fff;" onclick="launchGoogleMaps('${encodeURIComponent(state.warehouse.address)}')">
+          Starta navigering
+        </button>
+      </div>
+    `);
+    
+    markersGroup.addLayer(warehouseMarker);
+    bounds.push([state.warehouse.lat, state.warehouse.lon]);
+  }
+
+  // 2. Draw Stop Markers
+  state.stops.forEach((stop, index) => {
+    if (stop.lat === null || stop.lon === null) return;
+    
+    let pinColor = "blue";
+
+    if (stop.status === "completed") {
+      pinColor = "emerald";
+    } else if (stop.status === "failed") {
+      pinColor = "crimson";
+    } else if (index === state.currentStopIndex) {
+      pinColor = "glow";
+    }
+
+    const stopIcon = L.divIcon({
+      className: `custom-leaflet-marker ${pinColor}`,
+      html: `<div class="marker-pin ${pinColor}"></div><div class="marker-num">${index + 1}</div>`,
+      iconSize: [32, 32],
+      iconAnchor: [16, 32]
+    });
+
+    const popupContent = `
+      <div style="font-family: var(--font-primary); font-size: 0.85rem; color: #fff;">
+        <strong style="color:var(--accent-blue);">Stopp #${index + 1}</strong><br>
+        <span style="color:var(--text-muted);">${stop.address}</span><br>
+        <span style="font-size:0.75rem; color:var(--text-muted);">Status: ${stop.status === "pending" ? "Väntar" : (stop.status === "completed" ? "Levererad" : "Misslyckad")}</span><br>
+        <button class="btn-primary" style="height:32px; padding:0 12px; font-size:0.8rem; margin-top:8px; width:100%; font-weight:700; border-radius:4px; display:inline-flex; align-items:center; justify-content:center; color:#fff;" onclick="launchGoogleMaps('${encodeURIComponent(stop.address)}')">
+          Starta navigering
+        </button>
+      </div>
+    `;
+
+    const marker = L.marker([stop.lat, stop.lon], {
+      icon: stopIcon,
+      title: stop.address
+    }).bindPopup(popupContent);
+
+    markersGroup.addLayer(marker);
+    bounds.push([stop.lat, stop.lon]);
+  });
+
+  // 3. Draw Road Routing Polyline path
+  let pathCoords = [];
+  if (state.roadGeometry) {
+    pathCoords = state.roadGeometry.coordinates.map(c => [c[1], c[0]]);
+  } else {
+    if (state.warehouse) pathCoords.push([state.warehouse.lat, state.warehouse.lon]);
+    state.stops.forEach(s => {
+      if (s.lat !== null && s.lon !== null) {
+        pathCoords.push([s.lat, s.lon]);
+      }
+    });
+    if (state.lockWarehouse && state.warehouse) pathCoords.push([state.warehouse.lat, state.warehouse.lon]);
+  }
+
+  if (pathCoords.length > 1) {
+    routeLine = L.polyline(pathCoords, {
+      color: "var(--accent-blue)",
+      weight: 5,
+      opacity: 0.8,
+      lineJoin: "round"
+    }).addTo(map);
+  }
+
+  if (bounds.length > 0) {
+    map.fitBounds(bounds, { padding: [40, 40] });
+  }
+}
+
+// ==========================================================================
+// 11. STATIC ETA & TIME ENGINE
+// ==========================================================================
+function updateGlobalETAEngine() {
+  const headerBadge = document.getElementById("header-eta-badge");
+  const activeStopEtaLabel = document.getElementById("active-stop-eta");
+  const driveRemainingTime = document.getElementById("drive-remaining-time");
+  const driveRemainingDistance = document.getElementById("drive-remaining-distance");
+
+  if (state.stops.length === 0) {
+    headerBadge.textContent = "Ber. Sluttid: --:--";
+    headerBadge.classList.remove("complete");
+    return;
+  }
+
+  const now = new Date();
+  
+  // Calculate remaining stats
+  let totalRemainingTransit = 0;
+  let remainingStopsCount = 0;
+  
+  // Array of accumulative ETAs for stops
+  let cumulativeTime = new Date(now.getTime());
+
+  // Loop through stops starting from current active driver index position
+  for (let i = 0; i < state.stops.length; i++) {
+    const stop = state.stops[i];
+    const carouselEtaLabel = document.getElementById(`carousel-eta-${i}`);
+    
+    if (stop.status === "completed") {
+      // Completed -> Crossed out card and shows delivered status
+      if (carouselEtaLabel) carouselEtaLabel.textContent = "Levererad";
+      continue;
+    }
+
+    remainingStopsCount++;
+    
+    // Add leg driving transit duration (convert minutes to ms)
+    totalRemainingTransit += stop.duration;
+    cumulativeTime.setTime(cumulativeTime.getTime() + (stop.duration * 60 * 1000));
+    
+    // Render dynamic carousel clock label
+    const timeStr = formatClockTime(cumulativeTime);
+    if (carouselEtaLabel) carouselEtaLabel.textContent = `ETA: ${timeStr}`;
+
+    // Active stop ETA label tracking
+    if (i === state.currentStopIndex) {
+      if (activeStopEtaLabel) activeStopEtaLabel.textContent = `Ankomst ca: ${timeStr}`;
+    }
+
+    // Add Stop handling processing delay
+    cumulativeTime.setTime(cumulativeTime.getTime() + (state.stopTime * 60 * 1000));
+  }
+
+  // Add final warehouse return leg driving time
+  let returnLegDuration = 0;
+  if (state.lockWarehouse && state.warehouse && state.stops.length > 0) {
+    const lastStop = state.stops[state.stops.length - 1];
+    const d = haversineDistance(lastStop.lat, lastStop.lon, state.warehouse.lat, state.warehouse.lon) * 1.3;
+    returnLegDuration = (d / 50) * 60; // fallback in minutes
+    
+    totalRemainingTransit += returnLegDuration;
+    cumulativeTime.setTime(cumulativeTime.getTime() + (returnLegDuration * 60 * 1000));
+  }
+
+  // Render return sluttid (the absolute clock time driver returns)
+  const returnTimeStr = formatClockTime(cumulativeTime);
+  headerBadge.textContent = `Retur Lager: ${returnTimeStr}`;
+  
+  if (remainingStopsCount === 0) {
+    headerBadge.classList.add("complete");
+    headerBadge.textContent = "Passet Avslutat ✓";
+    if (activeStopEtaLabel) activeStopEtaLabel.textContent = "Klar för dagen!";
+  } else {
+    headerBadge.classList.remove("complete");
+  }
+
+  // Update driving tab side stats
+  const totalRemainingMinutes = Math.round(totalRemainingTransit + (remainingStopsCount * state.stopTime));
+  if (driveRemainingTime) {
+    driveRemainingTime.textContent = `${totalRemainingMinutes} min`;
+  }
+  if (driveRemainingDistance && state.roadDistance) {
+    // Show rough remaining distance estimation
+    const progressFactor = remainingStopsCount / state.stops.length;
+    driveRemainingDistance.textContent = `${(state.roadDistance * progressFactor).toFixed(1)} km`;
+  }
+}
+
+function formatClockTime(date) {
+  const hrs = String(date.getHours()).padStart(2, "0");
+  const mins = String(date.getMinutes()).padStart(2, "0");
+  return `${hrs}:${mins}`;
+}
+
+// ==========================================================================
+// 12. CUSTOM POPUP SYSTEM (PREMIUM DESIGN ALERTS)
+// ==========================================================================
+let modalCallback = null;
+
+function initModals() {
+  const backdrop = document.getElementById("custom-modal");
+  const closeX = document.getElementById("modal-close-x");
+  const okBtn = document.getElementById("modal-ok-btn");
+
+  const closeModal = () => {
+    backdrop.classList.add("hidden");
+    modalCallback = null;
+  };
+
+  closeX.addEventListener("click", closeModal);
+  okBtn.addEventListener("click", () => {
+    if (modalCallback) modalCallback();
+    closeModal();
+  });
+  
+  // Close modal when tapping background backdrop
+  backdrop.addEventListener("click", (e) => {
+    if (e.target === backdrop) closeModal();
+  });
+}
+
+function showSwedishModal(title, text) {
+  const backdrop = document.getElementById("custom-modal");
+  const titleEl = document.getElementById("modal-title");
+  const messageEl = document.getElementById("modal-message");
+  const actions = document.getElementById("modal-actions-container");
+
+  titleEl.textContent = title;
+  messageEl.innerHTML = text; // support html markup for bold text
+  
+  // Single OK button template
+  actions.innerHTML = `<button class="btn-primary" id="modal-ok-btn" style="width:100%;">OK</button>`;
+  
+  // Bind close event directly
+  document.getElementById("modal-ok-btn").addEventListener("click", () => {
+    backdrop.classList.add("hidden");
+  });
+
+  backdrop.classList.remove("hidden");
+}
+
+function showSwedishConfirmModal(title, text, confirmCallback) {
+  const backdrop = document.getElementById("custom-modal");
+  const titleEl = document.getElementById("modal-title");
+  const messageEl = document.getElementById("modal-message");
+  const actions = document.getElementById("modal-actions-container");
+
+  titleEl.textContent = title;
+  messageEl.innerHTML = text;
+  
+  // Double button template
+  actions.innerHTML = `
+    <button class="btn-secondary" id="modal-cancel-btn">Avbryt</button>
+    <button class="btn-primary" id="modal-confirm-btn" style="background-color: var(--accent-crimson);">Rensa</button>
+  `;
+  
+  document.getElementById("modal-cancel-btn").addEventListener("click", () => {
+    backdrop.classList.add("hidden");
+  });
+
+  document.getElementById("modal-confirm-btn").addEventListener("click", () => {
+    confirmCallback();
+    backdrop.classList.add("hidden");
+  });
+
+  backdrop.classList.remove("hidden");
+}
+
+function showSwedishChoiceModal(title, text, yesText, noText, yesCallback) {
+  const backdrop = document.getElementById("custom-modal");
+  const titleEl = document.getElementById("modal-title");
+  const messageEl = document.getElementById("modal-message");
+  const actions = document.getElementById("modal-actions-container");
+
+  titleEl.textContent = title;
+  messageEl.innerHTML = text;
+  
+  // Double button custom labels template
+  actions.innerHTML = `
+    <button class="btn-secondary" id="modal-cancel-btn">${noText}</button>
+    <button class="btn-primary" id="modal-confirm-btn">${yesText}</button>
+  `;
+  
+  document.getElementById("modal-cancel-btn").addEventListener("click", () => {
+    backdrop.classList.add("hidden");
+  });
+
+  document.getElementById("modal-confirm-btn").addEventListener("click", () => {
+    yesCallback();
+    backdrop.classList.add("hidden");
+  });
+
+  backdrop.classList.remove("hidden");
+}
+
+function showSwedishPromptModal(title, text, defaultValue, confirmCallback) {
+  const backdrop = document.getElementById("custom-modal");
+  const titleEl = document.getElementById("modal-title");
+  const messageEl = document.getElementById("modal-message");
+  const actions = document.getElementById("modal-actions-container");
+
+  titleEl.textContent = title;
+  
+  // Inject a styled textarea inside the message container
+  messageEl.innerHTML = `
+    <div class="input-group" style="margin-top: 10px; width: 100%;">
+      <label for="modal-prompt-input" style="display: block; margin-bottom: 6px;">${text}</label>
+      <textarea id="modal-prompt-input" rows="3" style="width: 100%; box-sizing: border-box; background: var(--bg-tertiary); border: 1px solid var(--border-color); color: var(--text-main); padding: 12px; border-radius: var(--radius-sm); font-family: var(--font-primary); font-size: 0.95rem; resize: vertical;" placeholder="Skriv anteckning här..."></textarea>
+    </div>
+  `;
+  
+  const inputEl = document.getElementById("modal-prompt-input");
+  inputEl.value = defaultValue || "";
+
+  actions.innerHTML = `
+    <button class="btn-secondary" id="modal-cancel-btn">Avbryt</button>
+    <button class="btn-primary" id="modal-confirm-btn">Spara</button>
+  `;
+  
+  document.getElementById("modal-cancel-btn").addEventListener("click", () => {
+    backdrop.classList.add("hidden");
+  });
+
+  document.getElementById("modal-confirm-btn").addEventListener("click", () => {
+    confirmCallback(inputEl.value.trim());
+    backdrop.classList.add("hidden");
+  });
+
+  backdrop.classList.remove("hidden");
+  inputEl.focus();
+}
+
+window.editStopComment = function(stopId) {
+  const stop = state.stops.find(s => s.id === stopId);
+  if (!stop) return;
+  
+  showSwedishPromptModal(
+    "Anteckning för leverans",
+    `Ange portkod, instruktioner eller anteckning för:<br><strong>${stop.address}</strong>`,
+    stop.comment || "",
+    (newComment) => {
+      stop.comment = newComment;
+      renderAll();
+    }
+  );
+};
+
+function addNonGeocodedStop(address) {
+  const newStop = {
+    id: "stop_" + Date.now() + "_" + Math.floor(Math.random() * 1000),
+    address: address,
+    lat: null,
+    lon: null,
+    status: "pending",
+    cargoLoaded: false,
+    duration: 0,
+    comment: "Systemkommentar: Adressen kunde inte hittas på kartan."
+  };
+  
+  state.stops.push(newStop);
+  calculateRouteGeometryAndStats().then(() => {
+    renderAll();
+    if (mapPlanera) updatePlaneraMapPathsAndMarkers();
+    if (map) updateMapPathsAndMarkers();
+  });
+}
+
+// Autocomplete logic for Sweden addresses via Nominatim Search API (Debounced)
+let suggestionDebounceTimer = null;
+
+function initAutocomplete() {
+  const addressInput = document.getElementById("address-input");
+  const suggestionsDiv = document.getElementById("address-suggestions");
+  if (!addressInput || !suggestionsDiv) return;
+
+  addressInput.addEventListener("input", (e) => {
+    const query = e.target.value.trim();
+    clearTimeout(suggestionDebounceTimer);
+    
+    if (query.length < 3) {
+      suggestionsDiv.classList.add("hidden");
+      suggestionsDiv.innerHTML = "";
+      return;
+    }
+    
+    suggestionDebounceTimer = setTimeout(() => {
+      fetchSuggestions(query);
+    }, 400);
+  });
+
+  // Close suggestions when clicking elsewhere
+  document.addEventListener("click", (e) => {
+    if (e.target !== addressInput && !suggestionsDiv.contains(e.target)) {
+      suggestionsDiv.classList.add("hidden");
+    }
+  });
+}
+
+async function fetchSuggestions(query) {
+  const suggestionsDiv = document.getElementById("address-suggestions");
+  if (!suggestionsDiv) return;
+
+  const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=se&limit=5`;
+  
+  try {
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": "RuttplanerarenDeliveryApp/1.0 (Sweden Autocomplete)"
+      }
+    });
+    if (!response.ok) return;
+    const data = await response.json();
+    
+    if (data && data.length > 0) {
+      suggestionsDiv.innerHTML = "";
+      data.forEach(item => {
+        const div = document.createElement("div");
+        div.className = "suggestion-item";
         
-        div.addEventListener('click', () => {
-          input.value = item.address;
-          dropdown.classList.add('hide');
-          onSelectCallback(item);
+        let displayName = item.display_name;
+        // Clean display name by stripping Swedish suffix
+        if (displayName.endsWith(", Sverige")) {
+          displayName = displayName.substring(0, displayName.length - 9);
+        }
+        div.textContent = displayName;
+        
+        div.addEventListener("click", () => {
+          document.getElementById("address-input").value = displayName;
+          suggestionsDiv.classList.add("hidden");
+          suggestionsDiv.innerHTML = "";
         });
-        
-        dropdown.appendChild(div);
+        suggestionsDiv.appendChild(div);
       });
-      lucide.createIcons();
-    }, 450); // debounce API requests
-  });
-  
-  // Hide dropdown if clicked outside
-  document.addEventListener('click', (e) => {
-    if (e.target !== input && e.target !== dropdown) {
-      dropdown.classList.add('hide');
+      suggestionsDiv.classList.remove("hidden");
+    } else {
+      suggestionsDiv.classList.add("hidden");
     }
-  });
+  } catch (err) {
+    console.warn("Kunde inte hämta adressförslag:", err);
+  }
 }
 
-// WebRTC and Spoken voice parser helpers removed
-
-// ==========================================================================
-// 10. BINDING COMPONENT EVENT LISTENERS
-// ==========================================================================
-function setupEventListeners() {
-  
-  // 0. Force Update & Clear Cache Binding
-  const clearCacheBtn = document.getElementById('clear-cache-btn');
-  if (clearCacheBtn) {
-    clearCacheBtn.addEventListener('click', async () => {
-      if (confirm("Vill du rensa appens cache och hämta den absolut senaste uppdateringen? (Din rutt försvinner inte!)")) {
-        // Unregister service workers
-        if ('serviceWorker' in navigator) {
-          try {
-            const registrations = await navigator.serviceWorker.getRegistrations();
-            for (let registration of registrations) {
-              await registration.unregister();
-            }
-          } catch (e) {
-            console.error("SW unregister error:", e);
-          }
-        }
-        // Clear caches
-        if ('caches' in window) {
-          try {
-            const keys = await caches.keys();
-            for (let key of keys) {
-              await caches.delete(key);
-            }
-          } catch (e) {
-            console.error("Cache clear error:", e);
-          }
-        }
-        // Force hard reload from server
-        window.location.reload(true);
-      }
-    });
-  }
-  
-  // 1. Warehouse setup bindings
-  const editWarehouseBtn = document.getElementById('edit-warehouse-btn');
-  const warehouseForm = document.getElementById('warehouse-form');
-  const cancelWarehouseBtn = document.getElementById('cancel-warehouse-btn');
-  const saveWarehouseBtn = document.getElementById('save-warehouse-btn');
-  let selectedWarehouseItem = null;
-  
-  editWarehouseBtn.addEventListener('click', () => {
-    warehouseForm.classList.remove('hide');
-    document.getElementById('warehouse-input').value = state.warehouse ? state.warehouse.address : '';
-    document.getElementById('warehouse-input').focus();
-  });
-  
-  cancelWarehouseBtn.addEventListener('click', () => {
-    warehouseForm.classList.add('hide');
-  });
-  
-  // Auto dropdown for Warehouse input
-  bindAutocomplete('warehouse-input', 'warehouse-autocomplete-results', (selectedItem) => {
-    selectedWarehouseItem = selectedItem;
-  });
-  
-  saveWarehouseBtn.addEventListener('click', async () => {
-    const addressInput = document.getElementById('warehouse-input').value;
-    
-    if (!addressInput || addressInput.trim().length === 0) {
-      alert("Vänligen ange en lageradress!");
-      return;
-    }
-    
-    // If user clicked autocomplete, we already have coordinates
-    if (selectedWarehouseItem && selectedWarehouseItem.address === addressInput) {
-      state.warehouse = {
-        address: selectedWarehouseItem.address,
-        lat: selectedWarehouseItem.lat,
-        lng: selectedWarehouseItem.lng
-      };
-    } else {
-      // Manual fallback search geocoding
-      const results = await searchAddress(addressInput);
-      if (results.length > 0) {
-        state.warehouse = {
-          address: results[0].address,
-          lat: results[0].lat,
-          lng: results[0].lng
-        };
-      } else {
-        alert("Kunde inte hitta adressen. Försök vara mer specifik.");
-        return;
-      }
-    }
-    
-    saveStateToStorage();
-    renderWarehouse();
-    warehouseForm.classList.add('hide');
-    
-    // Pan map to new warehouse
-    if (map) {
-      map.setView([state.warehouse.lat, state.warehouse.lng], 13);
-    }
-    
-    // Re-trigger routing calculations
-    calculateRoute(false);
-  });
-  
-  // 2. Add Stops autocomplete
-  const defaultCityInput = document.getElementById('default-city-input');
-  if (defaultCityInput) {
-    defaultCityInput.addEventListener('input', (e) => {
-      state.defaultCity = e.target.value.trim();
-      saveStateToStorage();
-    });
-  }
-
-  let selectedStopItem = null;
-  bindAutocomplete('stop-address-input', 'stop-autocomplete-results', (selectedItem) => {
-    selectedStopItem = selectedItem;
-    const numberInputField = document.getElementById('stop-number-input');
-    if (numberInputField) {
-      numberInputField.focus();
-    }
-  }, true);
-  
-  // "Lägg till i listan" button
-  const addStopBtn = document.getElementById('add-stop-text-btn');
-  const searchStopBtn = document.getElementById('search-stop-btn');
-  
-  // Helper to add stop to active state
-  const addStopToState = (address, lat, lng, duration) => {
-    const newStop = {
-      id: 'stop_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
-      address: address,
-      lat: lat,
-      lng: lng,
-      duration: duration,
-      status: 'pending',
-      isPinnedStart: false,
-      isPinnedEnd: false
-    };
-    
-    state.stops.push(newStop);
-    saveStateToStorage();
-    renderStopsList();
-    renderLastlista();
-    
-    // Clean input fields
-    document.getElementById('stop-address-input').value = '';
-    document.getElementById('stop-number-input').value = '';
-    selectedStopItem = null;
-    document.getElementById('stop-address-input').focus();
-    
-    // Auto-calculate route for the new stop in queue
-    calculateRoute(false);
-  };
-
-  // "Lägg till i listan" button handler
-  const addStopBtn = document.getElementById('add-stop-text-btn');
-  const searchStopBtn = document.getElementById('search-stop-btn');
-  
-  const handleAddStop = async () => {
-    const addressInput = document.getElementById('stop-address-input').value.trim();
-    const numberInput = document.getElementById('stop-number-input').value.trim();
-    const durInput = parseInt(document.getElementById('stop-duration-input').value, 10) || state.globalDuration;
-    
-    if (!addressInput || addressInput.length === 0) {
-      alert("Vänligen skriv in en adress!");
-      return;
-    }
-    
-    // Join street name and street number beautifully (inserting before comma if standardort exists)
-    let addressToSearch = addressInput;
-    if (numberInput) {
-      if (addressInput.includes(',')) {
-        const parts = addressInput.split(',');
-        parts[0] = `${parts[0].trim()} ${numberInput}`;
-        addressToSearch = parts.join(', ');
-      } else {
-        addressToSearch = `${addressInput} ${numberInput}`;
-      }
-    }
-    
-    let lat = 0, lng = 0, address = "";
-    
-    // Verify geocoding details
-    if (selectedStopItem && selectedStopItem.address === addressToSearch) {
-      lat = selectedStopItem.lat;
-      lng = selectedStopItem.lng;
-      address = selectedStopItem.address;
-    } else {
-      const results = await searchAddress(addressToSearch, true);
-      if (results.length > 0) {
-        lat = results[0].lat;
-        lng = results[0].lng;
-        address = results[0].address;
-      } else {
-        alert("Kunde inte geokoda adressen. Kontrollera stavning eller sök mer specifikt.");
-        return;
-      }
-    }
-    
-    // Duplicate check and prevention warning
-    const isDuplicate = state.stops.some(s => s.address.toLowerCase().trim() === address.toLowerCase().trim());
-    if (isDuplicate) {
-      showDuplicateWarningToast(address, () => {
-        // Confirmation callback: Add anyway!
-        addStopToState(address, lat, lng, durInput);
-      });
-      return;
-    }
-    
-    // Normal addition
-    addStopToState(address, lat, lng, durInput);
-  };
-  
-  if (addStopBtn) addStopBtn.addEventListener('click', handleAddStop);
-  if (searchStopBtn) searchStopBtn.addEventListener('click', handleAddStop);
-  
-  // Enter keys navigation & submission listeners
-  const stopAddressInputField = document.getElementById('stop-address-input');
-  const stopNumberInputField = document.getElementById('stop-number-input');
-  
-  if (stopAddressInputField && stopNumberInputField) {
-    stopAddressInputField.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        stopNumberInputField.focus();
-      }
-    });
- 
-    stopNumberInputField.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        handleAddStop();
-      }
-    });
-  }
-  
-  // Voice feature listeners removed
-  
-  // 3. Optimize Buttons & Clear Routings
-  document.getElementById('optimize-route-btn').addEventListener('click', () => {
-    calculateRoute(true); // run TSP optimization
-  });
-  
-  document.getElementById('clear-route-btn').addEventListener('click', () => {
-    if (confirm("Är du säker på att du vill tömma din aktuella leveransrutt?")) {
-      state.stops = [];
-      state.lastlistaLoadedStops = {};
-      saveStateToStorage();
-      renderStopsList();
-      renderLastlista();
-      updateMapMarkers();
-      if (routeLine) map.removeLayer(routeLine);
-      state.routeDistance = 0;
-      state.routeDuration = 0;
-      updateDashboard();
-    }
-  });
-  
-  // 4. Global standard duration update
-  document.getElementById('apply-global-duration').addEventListener('click', () => {
-    const val = parseInt(document.getElementById('global-duration').value, 10) || 4;
-    state.globalDuration = val;
-    
-    // Update all current stops to match new global duration setting
-    state.stops.forEach(s => s.duration = val);
-    
-    saveStateToStorage();
-    renderStopsList();
-    renderLastlista();
-    updateDashboard();
-    alert(`Alla stopp har uppdaterats till ${val} minuter standardleveranstid.`);
-  });
-  
-  // 5. HUD Mode Event Bindings
-  document.getElementById('toggle-hud-btn').addEventListener('click', () => switchTab('korlage'));
-  document.getElementById('exit-hud-btn').addEventListener('click', () => switchTab('planering'));
-  
-  document.getElementById('hud-success-btn').addEventListener('click', () => setHUDActiveStopStatus('delivered'));
-  document.getElementById('hud-fail-btn').addEventListener('click', () => setHUDActiveStopStatus('failed'));
-  
-  document.getElementById('hud-prev-btn').addEventListener('click', () => {
-    if (state.hudActiveIndex > 0) {
-      state.hudActiveIndex--;
-      renderHUDActiveStop();
-    }
-  });
-  
-  document.getElementById('hud-next-btn').addEventListener('click', () => {
-    if (state.hudActiveIndex < state.stops.length - 1) {
-      state.hudActiveIndex++;
-      renderHUDActiveStop();
-    }
-  });
-  
-  // 6. Map overlay utilities
-  document.getElementById('center-map-btn').addEventListener('click', fitMapBounds);
-  document.getElementById('locate-me-btn').addEventListener('click', () => {
-    if (!navigator.geolocation) {
-      alert("GPS stöds inte av din webbläsare.");
-      return;
-    }
-    
-    navigator.geolocation.getCurrentPosition((pos) => {
-      const lat = pos.coords.latitude;
-      const lng = pos.coords.longitude;
-      
-      map.setView([lat, lng], 15);
-      L.marker([lat, lng]).addTo(map).bindPopup("Här är du!").openPopup();
-    }, (err) => {
-      alert("Kunde inte hämta din position. Kontrollera dina platsbehörigheter.");
-    });
-  });
-  
-  // 7. Fliknavigering (Tabs navigation binding)
-  document.querySelectorAll('.tab-nav-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      const tab = e.currentTarget.dataset.tab;
-      switchTab(tab);
-    });
-  });
-  
-  // 8. Warehouse Locks Bindings
-  document.getElementById('lock-wh-start').addEventListener('change', (e) => {
-    state.lockWarehouseStart = e.target.checked;
-    saveStateToStorage();
-    calculateRoute(false);
-  });
-  
-  document.getElementById('lock-wh-end').addEventListener('change', (e) => {
-    state.lockWarehouseEnd = e.target.checked;
-    saveStateToStorage();
-    calculateRoute(false);
-  });
-  
-  // 9. Lastlista Action Buttons Bindings
-  const checkAllBtn = document.getElementById('lastlista-check-all-btn');
-  if (checkAllBtn) {
-    checkAllBtn.addEventListener('click', () => {
-      state.stops.forEach(s => state.lastlistaLoadedStops[s.id] = true);
-      saveStateToStorage();
-      renderLastlista();
-    });
-  }
-  
-  const uncheckAllBtn = document.getElementById('lastlista-uncheck-all-btn');
-  if (uncheckAllBtn) {
-    uncheckAllBtn.addEventListener('click', () => {
-      state.lastlistaLoadedStops = {};
-      saveStateToStorage();
-      renderLastlista();
-    });
-  }
-
-  // Camera and OCR scanning listeners removed
-}

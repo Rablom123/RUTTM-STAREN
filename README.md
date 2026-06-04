@@ -1,96 +1,86 @@
-# RuttMästaren – Distributionsguide för GitHub Pages
+# Ruttplaneraren - Smart Ruttoptimering för Budbilar
 
-Denna guide hjälper dig att ladda upp källkoden för **RuttMästaren** till ditt eget GitHub-konto och publicera den som en gratis webbapplikation (PWA). Därefter kan du öppna länken direkt på din smartphone, installera appen på hemskärmen och använda den i din budbil!
-
----
-
-## Steg 1: Skapa ett GitHub-konto och ett nytt arkiv (Repository)
-Om du inte redan har ett GitHub-konto, skapa ett kostnadsfritt på [github.com](https://github.com).
-
-1. Logga in på GitHub.
-2. Klicka på plustecknet `+` i det övre högra hörnet och välj **New repository** (Nytt arkiv).
-3. Ge arkivet ett namn, till exempel `rutt-planerare` eller `ruttmastaren`.
-4. Välj att arkivet ska vara **Public** (Offentligt) – detta krävs för att kunna använda gratisversionen av GitHub Pages.
-5. Lämna alternativen *Initialize this repository with* omarkerade (lägg inte till README, .gitignore eller licens här).
-6. Klicka på den gröna knappen **Create repository** (Skapa arkiv).
+Välkommen till **Ruttplaneraren**! Detta är en modern, supersnabb och mobilanpassad Progressive Web App (PWA) framtagen för distributionsförare och budbilschaufförer. Den hjälper dig att minimera körtider, packa bilen optimalt enligt LIFO-principen (Last In, First Out) och spåra dina leveranser med en realtids-ETA.
 
 ---
 
-## Steg 2: Ladda upp källkoden till GitHub
-Du kan ladda upp filerna direkt via webbläsaren eller med Git på din dator.
+## 🚀 Snabbguide: Distribuera Gratis via GitHub Pages
 
-### Alternativ A: Uppladdning direkt i webbläsaren (Enklast)
-1. På sidan för ditt nyskapade arkiv, klicka på länken **"uploading an existing file"** som finns i instruktionstexten.
-2. Dra och släpp följande filer från din dator till uppladdningsytan:
+Appen är helt fristående (statisk HTML/CSS/JS) och har inga servrar eller databaser. Det betyder att du kan köra den helt **gratis** direkt på din smartphone via GitHub Pages!
+
+Följ dessa enkla steg för att lägga upp din egen version:
+
+### Steg 1: Skapa ett GitHub-konto & ett nytt arkiv (Repository)
+1. Gå till [github.com](https://github.com/) och logga in (eller skapa ett gratis konto).
+2. Klicka på plustecknet (`+`) i övre högra hörnet och välj **New repository**.
+3. Ge ditt arkiv ett namn, till exempel `ruttplaneraren`.
+4. Välj att göra projektet **Public** (detta krävs för gratis GitHub Pages).
+5. Lämna "Add a README file" avbockad och klicka på **Create repository**.
+
+### Steg 2: Ladda upp kodfilerna
+Du kan ladda upp filerna direkt via webbläsaren:
+1. På din nya repository-sida, klicka på länken **"uploading an existing file"** (finns i den lilla texten under kommandoradsinstruktionerna).
+2. Markera följande 7 filer i din projektmapp och dra-och-släpp dem i webbläsarfönstret:
    - `index.html`
-   - `styles.css`
+   - `app.css`
    - `app.js`
    - `manifest.json`
    - `sw.js`
-   - Hela mappen `assets` med tillhörande ikoner (om tillgängliga).
+   - `icon-192.png`
+   - `icon-512.png`
 3. Vänta tills alla filer har laddats upp.
-4. Skriv ett kort meddelande i fältet *Commit changes* (t.ex. "Initial commit") och klicka på den gröna knappen **Commit changes**.
+4. Skriv en kort kommentar i fältet längst ner (t.ex. "Initial upload") och klicka på **Commit changes**.
 
-### Alternativ B: Uppladdning via terminalen (Git)
-Kör följande kommandon i din projektmapp på din dator:
-```bash
-# Initiera lokalt git-arkiv
-git init
-
-# Lägg till alla projektfiler
-git add .
-
-# Skapa din första commit
-git commit -m "Första uppladdningen av RuttMästaren"
-
-# Byt namn på huvudgrenen till main
-git branch -M main
-
-# Koppla ditt lokala arkiv till GitHub (ersätt med din webbadress!)
-git remote add origin https://github.com/DITT_ANVÄNDARNAMN/RUTT_REPOSITORY.git
-
-# Skicka upp källkoden
-git push -u origin main
-```
+### Steg 3: Aktivera GitHub Pages
+1. Gå till fliken ⚙️ **Settings** i menyraden högst upp i ditt repository.
+2. Välj **Pages** i menyn på vänster sida.
+3. Under rubriken **Build and deployment -> Branch**, ändra dropdown-menyn från `None` till **`main`** (eller `master`).
+4. Lämna mappen som `/ (root)` och klicka på 💾 **Save**.
+5. Vänta cirka 1–2 minuter. Längst upp på inställningssidan kommer en grön ruta att dyka upp med din unika webblänk, till exempel:
+   `https://ditt-användarnamn.github.io/ruttplaneraren/`
 
 ---
 
-## Steg 3: Aktivera GitHub Pages
-Nu ska vi göra koden körbar som en hemsida!
+## 📱 Installera på din smartphone (PWA)
 
-1. Gå till fliken **Settings** (Inställningar) längst upp i ditt GitHub-arkiv.
-2. I menyn till vänster, under sektionen *Code and automation*, klicka på **Pages**.
-3. Under rubriken **Build and deployment**:
-   - Kontrollera att *Source* är inställd på **Deploy from a branch**.
-   - Under *Branch*, ändra från `None` till **`main`**.
-   - Låt mappen vara inställd på **`/ (root)`**.
-4. Klicka på knappen **Save** (Spara).
-5. Vänta i 1–2 minuter. GitHub kommer nu att bygga och publicera din applikation i bakgrunden.
-6. Uppdatera sidan. Längst upp under rubriken *GitHub Pages* kommer du nu att se en grön text med din personliga länk, till exempel:
-   `Your site is live at https://DITT_ANVÄNDARNAMN.github.io/RUTT_REPOSITORY/`
+När länken är aktiv kan du installera appen på din telefon så att den fungerar precis som en vanlig app utan webbläsarens gränssnitt:
 
----
+### På iPhone (iOS - Safari):
+1. Öppna din unika GitHub Pages-länk i **Safari**.
+2. Klicka på **Dela-knappen** (fyrkanten med en pil uppåt) i webbläsarens bottenmeny.
+3. Bläddra ner och klicka på ➕ **Lägg till på hemskärmen** (Add to Home Screen).
+4. Bekräfta genom att klicka på **Lägg till**. Appen finns nu på din hemskärm med en snygg mörk ikon och startar i helskärmsläge utan adressfält!
 
-## Steg 4: Installera RuttMästaren på din Smartphone (PWA)
-Eftersom RuttMästaren är en fullfjädrad **Progressive Web App (PWA)** kan den installeras och köras i helskärmsläge på din mobil – precis som en vanlig app!
-
-### För iPhone (iOS & Safari):
-1. Öppna webbläsaren **Safari** på din iPhone.
-2. Gå till din publicerade GitHub Pages-länk (t.ex. `https://användarnamn.github.io/ruttmastaren/`).
-3. Klicka på **Dela-knappen** (ikonen med en fyrkant och en uppåtpekande pil) i bottenmenyn.
-4. Rulla ner i menyn och tryck på **Lägg till på hemskärmen** (Add to Home Screen).
-5. Klicka på **Lägg till** i det övre högra hörnet.
-6. Ikonen för **RuttMästaren** dyker nu upp på din hemskärm! Klicka på den för att köra i helt ostört fullskärmsläge.
-
-### För Android (Samsung, Pixel, Xiaomi, etc. & Chrome):
-1. Öppna webbläsaren **Google Chrome** på din mobil.
-2. Gå till din publicerade GitHub Pages-länk.
-3. Chrome kommer automatiskt att visa en popup längst ner som frågar **"Lägg till RuttMästaren på hemskärmen"**. Tryck på den!
-4. Om popupen inte visas, klicka på de **tre punkterna** i det övre högra hörnet och välj **Installera app** eller **Lägg till på startskärmen**.
-5. Godkänn installationen. Appen installeras nu på din enhet och kan startas direkt från din app-låda eller hemskärm.
+### På Android (Chrome):
+1. Öppna din unika länk i **Google Chrome**.
+2. Chrome kommer automatiskt att visa en banner längst ner: *"Lägg till Ruttplaneraren på startskärmen"*. Klicka på den.
+3. Om bannern inte syns, klicka på de tre prickarna i övre högra hörnet och välj **Installera app** eller **Lägg till på startskärmen**.
 
 ---
 
-## 🛠️ Offline-läge och Cache-uppdateringar
-- **Offline-stöd**: Tack vare appens Service Worker (`sw.js`) kan du starta och använda appen även om din budbil tappar internetuppkopplingen under skiftet. Kartan och adressinmatningen kräver nätverk för geokodning, men dina sparade rutter, lastlistor, checklistor och den statiska ETA-motorn fungerar till 100% offline!
-- **Uppdateringsknapp**: Om du gör kodändringar på GitHub och vill hämta den senaste versionen till din mobil, klicka på knappen **UPPDATERA** i appens header. Det rensar mobilens lokala cache och laddar omedelbart in den absolut senaste versionen utan att du förlorar din sparade rutt!
+## 🚛 Användarmanual för Föraren
+
+Appen är uppdelad i tre tydliga faser som du navigerar mellan via knapparna i botten:
+
+### 1. Planera (Ruttplanering)
+* **Start-/Slutlager:** Expandera fliken *"Konfigurering & Lager"* och skriv in din startpunkt för dagen (t.ex. *Lagergatan 5, Halmstad*). Klicka på **Spara**. Detta låser start- och slutdestinationen för optimeringen.
+* **Inställningar:** Sätt din **Standardort** (t.ex. Halmstad). Om du bara skriver gatuadressen *"Storgatan 12"* i sökrutan kommer appen automatiskt lägga till orten så att du slipper skriva den varje gång. Ställ även in din **Stopptid** (hur många minuter varje paketleverans tar, t.ex. 3 eller 5 minuter).
+* **Lägg till leveranser:** Skriv in dina adresser en efter en och klicka på **Lägg till**. Adressen kontrolleras direkt mot karttjänsten och läggs till i listan.
+  * *Dubblettvarning:* Om du försöker lägga till en adress som redan finns i listan varnar appen direkt.
+* **Optimera Rutt:** Klicka på den stora blå knappen **Optimera Rutt**. Appen sorterar nu blixtsnabbt alla mellanstopp så att du kör den absolut kortaste och snabbaste sträckan, med lagret som fast start och slut.
+* **Manuell justering (Drag-and-Drop):** Vill du flytta ett stopp manuellt? Håll in och dra i ikonen med de sex prickarna till vänster om adressen för att flytta den uppåt eller nedåt i listan. Rutten och din ETA uppdateras direkt!
+
+### 2. Lastlista (Packning enligt LIFO)
+* Denna lista är **bakåtvänd (LIFO - Last In, First Out)** utifrån din optimerade rutt.
+* Paketen högst upp i listan ska levereras först på din rutt. Därför måste de packas **sist (närmast bakdörrarna)**.
+* Paketen i botten ska levereras sist och ska därför packas **längst in i skåpet (närmast förarhytten)**.
+* Bocka av paketen i listan med kryssrutan vartefter du bär in dem i budbilen för full kontroll.
+
+### 3. Körläge (Leverans & Navigering)
+* **Kartan:** Visar din rutt och alla stopp. Det aktuella stoppet lyser grönt med en blinkande effekt, slutförda stopp är gråmarkerade och misslyckade är röda.
+* **Aktivt stopp:** Visar adressen du ska köra till i jättestor, tydlig text.
+* **Starta navigering:** Klicka på den stora gula knappen. Den öppnar omedelbart **Google Maps-appen** i din telefon med turn-by-turn navigering inställd på stoppets koordinater.
+* **Leveransåtgärder:**
+  * **Levererad (Grön):** Klicka här när paketet är överlämnat. Appen bockar av stoppet, flyttar framstegsmätaren och fokuserar direkt på nästa adress.
+  * **Kunde ej leverera (Röd):** Om kunden inte är hemma eller porten är låst, klicka här. Appen markerar stoppet och flyttar det **automatiskt till det absoluta slutet av kön** (precis innan du åker tillbaka till lagret) så att du kan göra ett nytt försök i slutet av passet utan att avbryta din planerade körning.
+* **ETA-motor:** Den mörka statusraden längst upp visar din beräknade sluttid tillbaka till lagret. Denna tid räknas om direkt när du gör en manuell ändring, kör vilse, blir försenad eller bockar av ett stopp!

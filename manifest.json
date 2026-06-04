@@ -1,32 +1,22 @@
 {
-  "name": "RuttPlaneraren",
-  "short_name": "RuttPlaneraren",
-  "description": "Din smarta ruttplanerare för budbilsleveranser med OCR-skanning och ruttoptimering.",
+  "short_name": "Ruttplaneraren",
+  "name": "Ruttplaneraren - Smart Ruttoptimering",
+  "description": "Mobil ruttoptimering och lastlista för budbilar.",
   "start_url": "./index.html",
   "display": "standalone",
-  "orientation": "portrait",
-  "background_color": "#0B0F19",
-  "theme_color": "#0B0F19",
-  "id": "se.ruttplaneraren.app",
-  "categories": ["productivity", "utilities"],
+  "orientation": "portrait-primary",
+  "background_color": "#121214",
+  "theme_color": "#1e1e24",
   "icons": [
     {
-      "src": "assets/icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "src": "icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192"
     },
     {
-      "src": "assets/icon-192.png",
-      "sizes": "192x192",
+      "src": "icon-512.png",
       "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "assets/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
+      "sizes": "512x512"
     }
   ]
 }

@@ -1,0 +1,1846 @@
+/* ==========================================================================
+   DESIGN SYSTEM & VARIABLES
+   ========================================================================== */
+:root {
+  --bg-primary: #121214;
+  --bg-secondary: #1c1c1f;
+  --bg-tertiary: #252529;
+  --bg-glass: rgba(28, 28, 31, 0.75);
+  
+  --text-main: #f3f4f6;
+  --text-muted: #9ca3af;
+  --text-inverse: #121214;
+  
+  --accent-blue: #3b82f6;
+  --accent-blue-hover: #60a5fa;
+  --accent-blue-glow: rgba(59, 130, 246, 0.35);
+  
+  --accent-emerald: #10b981;
+  --accent-emerald-hover: #34d399;
+  --accent-emerald-glow: rgba(16, 185, 129, 0.3);
+  
+  --accent-orange: #f59e0b;
+  --accent-orange-hover: #fbbf24;
+  --accent-orange-glow: rgba(245, 158, 11, 0.3);
+  
+  --accent-crimson: #ef4444;
+  --accent-crimson-hover: #f87171;
+  --accent-crimson-glow: rgba(239, 68, 68, 0.3);
+
+  --border-color: #2e2e33;
+  --border-focus: #4b5563;
+  
+  --font-primary: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-display: 'Outfit', sans-serif;
+  
+  --shadow-sm: 0 2px 4px rgba(0,0,0,0.2);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.3);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,0.5);
+  --shadow-blue-glow: 0 8px 30px var(--accent-blue-glow);
+  --shadow-emerald-glow: 0 8px 30px var(--accent-emerald-glow);
+  
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-round: 50%;
+  
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ==========================================================================
+   RESET & MOBILE BASE LAYOUT
+   ========================================================================== */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--bg-primary);
+  color: var(--text-main);
+  font-family: var(--font-primary);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: var(--radius-sm);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-focus);
+}
+
+/* ==========================================================================
+   APP SHELL CONTAINER
+   ========================================================================== */
+.app-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  max-width: 500px; /* Centered layout for larger devices mimicking mobile */
+  margin: 0 auto;
+  background: var(--bg-primary);
+  border-left: 1px solid var(--border-color);
+  border-right: 1px solid var(--border-color);
+  position: relative;
+  box-shadow: var(--shadow-lg);
+}
+
+/* ==========================================================================
+   HEADER
+   ========================================================================== */
+.app-header {
+  height: 64px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  z-index: 100;
+  flex-shrink: 0;
+}
+
+.header-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-icon {
+  width: 24px;
+  height: 24px;
+  color: var(--accent-blue);
+}
+
+.brand h1 {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  background: linear-gradient(135deg, var(--text-main) 30%, var(--accent-blue) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.status-badge {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  padding: 6px 12px;
+  border-radius: 30px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--accent-orange);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  transition: all var(--transition-fast) ease;
+}
+
+.status-badge.complete {
+  color: var(--accent-emerald);
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+/* ==========================================================================
+   MAIN CONTENT VIEWPORT & TRANSITIONS
+   ========================================================================== */
+.app-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px;
+  padding-bottom: 90px; /* Accommodate bottom nav and touch clearance */
+  position: relative;
+}
+
+/* View Sections */
+.view-section {
+  display: none;
+  flex-direction: column;
+  gap: 16px;
+  animation: fadeIn var(--transition-normal);
+}
+
+.view-section.active {
+  display: flex;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ==========================================================================
+   COMMON PREMIUM COMPONENTS & CARDS
+   ========================================================================== */
+.dashboard-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  transition: border-color var(--transition-fast) ease, box-shadow var(--transition-fast) ease;
+}
+
+.dashboard-card:hover {
+  border-color: var(--border-focus);
+}
+
+.card-header {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.card-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.card-title-group svg {
+  width: 20px;
+  height: 20px;
+}
+
+.card-header h3 {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.card-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.card-body.hidden {
+  display: none;
+}
+
+/* Icons Colors */
+.icon-orange { color: var(--accent-orange); }
+.icon-blue { color: var(--accent-blue); }
+.icon-emerald { color: var(--accent-emerald); }
+.icon-crimson { color: var(--accent-crimson); }
+
+/* ==========================================================================
+   INPUTS & FORM CONTROLS (TAPPING TARGETS MIN 48PX)
+   ========================================================================== */
+label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.grid-2-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+input[type="text"],
+input[type="number"] {
+  height: 48px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-main);
+  padding: 0 14px;
+  font-family: var(--font-primary);
+  font-size: 0.95rem;
+  transition: all var(--transition-fast) ease;
+  width: 100%;
+}
+
+input[type="text"]:focus,
+input[type="number"]:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 3px var(--accent-blue-glow);
+}
+
+.input-with-action {
+  display: flex;
+  gap: 8px;
+  position: relative;
+  width: 100%;
+}
+
+.input-with-action input {
+  flex: 1;
+}
+
+.input-helper {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.input-helper strong {
+  color: var(--text-main);
+}
+
+/* ==========================================================================
+   BUTTONS (TAP TARGETS MIN 48-56PX)
+   ========================================================================== */
+button {
+  font-family: var(--font-primary);
+  font-weight: 600;
+  font-size: 0.95rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all var(--transition-fast) ease;
+  height: 48px;
+  padding: 0 18px;
+}
+
+button:active {
+  transform: scale(0.98);
+}
+
+/* Primary Glow Button */
+.btn-primary {
+  background: var(--accent-blue);
+  color: #ffffff;
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  min-width: 100px;
+}
+
+.btn-primary:hover {
+  background: var(--accent-blue-hover);
+}
+
+/* Secondary Button */
+.btn-secondary {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+}
+
+.btn-secondary:hover {
+  border-color: var(--border-focus);
+  background: var(--border-color);
+}
+
+/* Danger Outline Button */
+.btn-danger-outline {
+  background: transparent;
+  border: 1px solid var(--accent-crimson);
+  color: var(--accent-crimson);
+  height: 40px;
+  font-size: 0.85rem;
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+}
+
+.btn-danger-outline:hover {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+/* Action Glow Button - Big Route Optimize Trigger */
+.btn-action-glow {
+  height: 56px;
+  background: linear-gradient(135deg, var(--accent-blue) 0%, #1d4ed8 100%);
+  color: #ffffff;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 700;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-blue-glow);
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+}
+
+.btn-action-glow:hover {
+  box-shadow: 0 10px 35px var(--accent-blue-glow);
+  filter: brightness(1.1);
+}
+
+/* Navigation Launch Button */
+.btn-nav-launch {
+  height: 56px;
+  background: linear-gradient(135deg, var(--accent-orange) 0%, #d97706 100%);
+  color: #ffffff;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 700;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  width: 100%;
+}
+
+.btn-nav-launch:hover {
+  filter: brightness(1.1);
+}
+
+/* Action Emerald Button */
+.btn-success {
+  background: var(--accent-emerald);
+  color: #ffffff;
+  height: 56px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  border-radius: var(--radius-md);
+  width: 100%;
+  box-shadow: var(--shadow-emerald-glow);
+}
+
+.btn-success:hover {
+  background: var(--accent-emerald-hover);
+}
+
+/* Icon-only Button */
+.btn-icon {
+  background: transparent;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: var(--radius-round);
+  color: var(--text-muted);
+}
+
+.btn-icon:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-main);
+}
+
+.chevron-icon {
+  width: 18px;
+  height: 18px;
+  transition: transform var(--transition-normal);
+}
+
+.chevron-icon.rotated {
+  transform: rotate(180deg);
+}
+
+/* ==========================================================================
+   SWITCHES & CONTROL ROWS
+   ========================================================================== */
+.control-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+}
+
+.toggle-container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.toggle-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+/* Switch styling */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+}
+
+.switch input { 
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  transition: .3s;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 16px;
+  width: 16px;
+  left: 3px;
+  bottom: 3px;
+  background-color: var(--text-muted);
+  transition: .3s;
+}
+
+input:checked + .slider {
+  background-color: var(--accent-blue);
+  border-color: var(--accent-blue);
+}
+
+input:checked + .slider:before {
+  transform: translateX(20px);
+  background-color: #ffffff;
+}
+
+.slider.round {
+  border-radius: 34px;
+}
+
+.slider.round:before {
+  border-radius: 50%;
+}
+
+/* ==========================================================================
+   ROUTE SEQUENCING DRAG-AND-DROP LIST
+   ========================================================================== */
+.stops-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.section-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.section-header-row h4 {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.info-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--accent-blue);
+  background: var(--accent-blue-glow);
+  padding: 4px 10px;
+  border-radius: 12px;
+}
+
+.stops-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  list-style: none;
+}
+
+/* Stop Card Item */
+.stop-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  position: relative;
+  transition: all var(--transition-fast) ease;
+  user-select: none;
+}
+
+.stop-item.dragging {
+  opacity: 0.5;
+  border-style: dashed;
+  border-color: var(--accent-blue);
+  box-shadow: var(--shadow-lg);
+  transform: scale(0.98);
+}
+
+/* Stop drag handle */
+.drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  cursor: grab;
+  width: 24px;
+  height: 24px;
+}
+
+.stop-item:hover .drag-handle {
+  color: var(--text-main);
+}
+
+/* Badge Indicator for Stop numbers */
+.stop-badge {
+  width: 26px;
+  height: 26px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-round);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-main);
+  flex-shrink: 0;
+}
+
+.stop-item.warehouse .stop-badge {
+  background: var(--accent-orange-glow);
+  border-color: var(--accent-orange);
+  color: var(--accent-orange);
+}
+
+.stop-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+
+.stop-address {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stop-details {
+  display: flex;
+  gap: 8px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  align-items: center;
+}
+
+.stop-details .duration-tag {
+  color: var(--accent-orange);
+}
+
+.stop-delete-btn {
+  background: transparent;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stop-delete-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--accent-crimson);
+}
+
+/* ==========================================================================
+   LASTLISTA (LIFO LOADING CARDS)
+   ========================================================================== */
+.loading-intro-card {
+  background: var(--bg-secondary);
+  border-left: 4px solid var(--accent-blue);
+  padding: 14px 16px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.loading-intro-card h3 {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.loading-intro-card p {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.cargo-loading-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+}
+
+.progress-info {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.progress-bar-bg {
+  height: 10px;
+  background: var(--bg-tertiary);
+  border-radius: 10px;
+  overflow: hidden;
+  width: 100%;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: var(--accent-blue);
+  border-radius: 10px;
+  transition: width var(--transition-normal);
+  width: 0%;
+}
+
+.progress-bar-fill.emerald {
+  background: var(--accent-emerald);
+}
+
+.packing-zones {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.zone-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 6px 12px;
+  border-radius: 20px;
+}
+
+.zone-top {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--accent-emerald);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.zone-bottom {
+  background: rgba(245, 158, 11, 0.1);
+  color: var(--accent-orange);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.cargo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  list-style: none;
+}
+
+/* LIFO Cargo Item Component */
+.cargo-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  padding: 14px 16px;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast) ease;
+}
+
+.cargo-item.loaded {
+  border-color: rgba(16, 185, 129, 0.3);
+  background: rgba(16, 185, 129, 0.04);
+}
+
+.cargo-item.loaded .cargo-package-badge {
+  background: var(--accent-emerald);
+  color: var(--text-inverse);
+  border-color: var(--accent-emerald);
+}
+
+.cargo-item.loaded .cargo-address {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+.cargo-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  overflow: hidden;
+  flex: 1;
+}
+
+.cargo-package-badge {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-main);
+  flex-shrink: 0;
+  transition: all var(--transition-fast) ease;
+}
+
+.cargo-info {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.cargo-address {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: all var(--transition-fast) ease;
+}
+
+.cargo-sequence-text {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+/* Modern Cargo Checkbox (Tap size: 48px container) */
+.cargo-checkbox-container {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.cargo-checkbox {
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--border-focus);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast) ease;
+}
+
+.cargo-checkbox-container:hover .cargo-checkbox {
+  border-color: var(--text-muted);
+}
+
+.cargo-item.loaded .cargo-checkbox {
+  background: var(--accent-emerald);
+  border-color: var(--accent-emerald);
+}
+
+.cargo-checkbox svg {
+  width: 14px;
+  height: 14px;
+  color: #ffffff;
+  opacity: 0;
+  transform: scale(0.5);
+  transition: all var(--transition-fast) ease;
+}
+
+.cargo-item.loaded .cargo-checkbox svg {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* ==========================================================================
+   KÖRLÄGE (DRIVING MODE DASHBOARD)
+   ========================================================================== */
+.map-container-wrapper {
+  position: relative;
+  width: 100%;
+  height: 220px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
+}
+
+#leaflet-route-map {
+  width: 100%;
+  height: 100%;
+  z-index: 10;
+}
+
+/* Tile Inversion for Dark Theme */
+.leaflet-tile-container {
+  filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%);
+}
+
+.leaflet-bar {
+  border: 1px solid var(--border-color) !important;
+  box-shadow: var(--shadow-md) !important;
+}
+
+.leaflet-bar a {
+  background-color: var(--bg-secondary) !important;
+  color: var(--text-main) !important;
+  border-bottom: 1px solid var(--border-color) !important;
+}
+
+.leaflet-bar a:hover {
+  background-color: var(--bg-tertiary) !important;
+}
+
+/* Float Stats Overlay on Map */
+.map-overlay-stats {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  right: 8px;
+  z-index: 20;
+  display: flex;
+  gap: 8px;
+}
+
+.stat-bubble {
+  flex: 1;
+  background: var(--bg-glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-color);
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.stat-bubble .label {
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.stat-bubble .value {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-main);
+  font-family: var(--font-display);
+}
+
+/* Driving Progress Banner */
+.driving-progress-banner {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.progress-details {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.progress-count {
+  color: var(--text-main);
+}
+
+.progress-percent {
+  color: var(--accent-emerald);
+}
+
+/* Active Stop Detailed Card (Tactile Dashboard) */
+.active-stop-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: relative;
+  box-shadow: var(--shadow-md);
+}
+
+.active-stop-card.warehouse-stop {
+  border-left: 4px solid var(--accent-orange);
+}
+
+.active-stop-card.delivery-stop {
+  border-left: 4px solid var(--accent-blue);
+}
+
+.card-badge-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.active-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 30px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.active-badge.blue {
+  background: rgba(59, 130, 246, 0.15);
+  color: var(--accent-blue);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+}
+
+.active-badge.orange {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--accent-orange);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+
+.active-eta-clock {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.active-address-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.active-address {
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: #ffffff;
+  line-height: 1.25;
+}
+
+.active-meta {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  display: flex;
+  gap: 12px;
+}
+
+.active-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Action Buttons for Active driving targets */
+.driver-action-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.btn-failed-delivery {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid var(--accent-crimson);
+  color: var(--accent-crimson);
+  height: 56px;
+  font-size: 1rem;
+  font-weight: 700;
+  border-radius: var(--radius-md);
+  width: 100%;
+}
+
+.btn-failed-delivery:hover {
+  background: rgba(239, 68, 68, 0.2);
+}
+
+/* Upcoming stops carousel */
+.upcoming-stops-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.upcoming-stops-section h4 {
+  font-family: var(--font-display);
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.stops-carousel {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 4px 0;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+
+.carousel-card {
+  flex: 0 0 160px;
+  scroll-snap-align: start;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: pointer;
+  transition: all var(--transition-fast) ease;
+}
+
+.carousel-card:hover {
+  border-color: var(--border-focus);
+}
+
+.carousel-card.active {
+  border-color: var(--accent-blue);
+  background: rgba(59, 130, 246, 0.05);
+}
+
+.carousel-card.completed {
+  border-color: rgba(16, 185, 129, 0.2);
+  background: rgba(16, 185, 129, 0.02);
+  opacity: 0.6;
+}
+
+.carousel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.carousel-num {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 700;
+  width: 18px;
+  height: 18px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-round);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.carousel-card.active .carousel-num {
+  background: var(--accent-blue);
+  color: #ffffff;
+}
+
+.carousel-card.completed .carousel-num {
+  background: var(--accent-emerald);
+  color: var(--text-inverse);
+}
+
+.carousel-status-tag {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.status-tag-active { color: var(--accent-blue); }
+.status-tag-pending { color: var(--text-muted); }
+.status-tag-completed { color: var(--accent-emerald); }
+.status-tag-failed { color: var(--accent-crimson); }
+
+.carousel-address {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.carousel-card.completed .carousel-address {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+.carousel-eta {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+
+/* ==========================================================================
+   EMPTY STATE PLACEHOLDERS
+   ========================================================================== */
+.empty-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 30px 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  text-align: center;
+  gap: 8px;
+}
+
+.empty-placeholder.hidden {
+  display: none !important;
+}
+
+.placeholder-icon {
+  width: 48px;
+  height: 48px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.empty-placeholder p {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.empty-placeholder .subtext {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  max-width: 250px;
+  line-height: 1.4;
+}
+
+/* ==========================================================================
+   NAVIGATION BAR (BOTTOM FIXED - PERFECT TARGETS)
+   ========================================================================== */
+.app-nav {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 72px;
+  background: var(--bg-glass);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  z-index: 100;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.nav-btn {
+  flex: 1;
+  height: 100%;
+  background: transparent;
+  border: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 500;
+  padding: 0;
+  border-radius: 0;
+  transition: all var(--transition-fast) ease;
+}
+
+.nav-btn svg {
+  width: 20px;
+  height: 20px;
+  transition: transform var(--transition-fast) ease;
+}
+
+.nav-btn:hover {
+  color: var(--text-main);
+}
+
+.nav-btn.active {
+  color: var(--accent-blue);
+  font-weight: 700;
+}
+
+.nav-btn.active svg {
+  transform: translateY(-2px);
+  stroke-width: 2.5;
+}
+
+/* ==========================================================================
+   CUSTOM SWEDISH POPUP MODALS
+   ========================================================================== */
+.custom-modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: fadeInModal 0.2s ease-out;
+}
+
+.custom-modal-backdrop.hidden {
+  display: none !important;
+}
+
+.custom-modal-content {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  width: 100%;
+  max-width: 380px;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  animation: slideInModal 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes fadeInModal {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideInModal {
+  from { transform: scale(0.9) translateY(20px); opacity: 0; }
+  to { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+.modal-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-header h4 {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.btn-icon-close {
+  background: transparent;
+  border: none;
+  font-size: 1.6rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+}
+
+.btn-icon-close:hover {
+  color: var(--text-main);
+}
+
+.modal-body {
+  padding: 20px;
+}
+
+.modal-body p {
+  font-size: 0.92rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.modal-footer {
+  padding: 12px 20px 20px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.modal-footer button {
+  height: 44px;
+}
+
+/* Spinner Loader */
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 3px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  border-top-color: #ffffff;
+  animation: spin 0.8s linear infinite;
+}
+
+.spinner.hidden {
+  display: none !important;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ==========================================================================
+   PLANERA MAP LAYOUT & PIN ENHANCEMENTS
+   ========================================================================== */
+#planera-map-wrapper {
+  height: 350px;
+  box-shadow: var(--shadow-md);
+  border-color: var(--border-focus);
+}
+
+/* Drop-Pin dropletes and speech bubble arrows */
+.custom-leaflet-marker {
+  position: relative;
+  width: 36px !important;
+  height: 44px !important;
+  margin-left: -18px !important;
+  margin-top: -44px !important;
+}
+
+.marker-pin {
+  width: 36px;
+  height: 36px;
+  border-radius: 50% 50% 50% 0;
+  position: absolute;
+  transform: rotate(-45deg);
+  left: 50%;
+  top: 50%;
+  margin: -18px 0 0 -18px;
+  box-shadow: var(--shadow-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #ffffff;
+  transition: all var(--transition-fast) ease;
+}
+
+/* Center circle inside drop-pin to make numbers stand out */
+.marker-pin::after {
+  content: "";
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--bg-secondary);
+  position: absolute;
+  z-index: 1;
+}
+
+/* Accent color overrides for drop-pin drop boundaries */
+.custom-leaflet-marker.blue .marker-pin {
+  background: var(--accent-blue);
+  border-color: #ffffff;
+}
+
+.custom-leaflet-marker.orange .marker-pin {
+  background: var(--accent-orange);
+  border-color: #ffffff;
+}
+
+.custom-leaflet-marker.emerald .marker-pin {
+  background: var(--accent-emerald);
+  border-color: #ffffff;
+}
+
+.custom-leaflet-marker.crimson .marker-pin {
+  background: var(--accent-crimson);
+  border-color: #ffffff;
+}
+
+/* Pulsing glow animation for the active driving stop */
+.custom-leaflet-marker.glow .marker-pin {
+  background: #ffeb3b;
+  box-shadow: 0 0 15px rgba(255, 235, 59, 0.6);
+  animation: pulse-glow 1.5s infinite;
+  border-color: #ffffff;
+}
+
+@keyframes pulse-glow {
+  0% { box-shadow: 0 0 0 0 rgba(255, 235, 59, 0.7); }
+  70% { box-shadow: 0 0 0 10px rgba(255, 235, 59, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 235, 59, 0); }
+}
+
+/* Centered stop number */
+.marker-num {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: #ffffff;
+  z-index: 10;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+}
+
+.custom-leaflet-marker.orange .marker-num {
+  font-size: 0.85rem;
+}
+
+/* Pin Action Badges styling for list items */
+.stop-pin-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+  margin-right: 8px;
+}
+
+.btn-pin-tag {
+  height: 28px;
+  padding: 0 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-family: var(--font-display);
+  transition: all var(--transition-fast) ease;
+}
+
+.btn-pin-tag:hover {
+  background: var(--border-color);
+  color: var(--text-main);
+}
+
+.btn-pin-tag.active-start {
+  background: var(--accent-emerald-glow);
+  border-color: var(--accent-emerald);
+  color: var(--accent-emerald);
+}
+
+.btn-pin-tag.active-end {
+  background: var(--accent-orange-glow);
+  border-color: var(--accent-orange);
+  color: var(--accent-orange);
+}
+
+/* Clickable status badge pills in list */
+.status-pill-btn {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  border-radius: 30px;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-family: var(--font-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--transition-fast) ease;
+}
+
+.status-pill-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-main);
+}
+
+.status-pill-btn.completed {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: var(--accent-emerald);
+  color: var(--accent-emerald);
+}
+
+.status-pill-btn.completed:hover {
+  background: rgba(16, 185, 129, 0.2);
+}
+
+.status-pill-btn.failed {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: var(--accent-crimson);
+  color: var(--accent-crimson);
+}
+
+.status-pill-btn.failed:hover {
+  background: rgba(239, 68, 68, 0.2);
+}
+
+.status-pill-btn.pending {
+  background: var(--bg-tertiary);
+  border-color: var(--border-color);
+  color: var(--text-muted);
+}
+
+/* Color boundaries and dimming for completed & failed items in the Planera stops list */
+.stop-item.completed {
+  border-left: 4px solid var(--accent-emerald) !important;
+  background: rgba(16, 185, 129, 0.05);
+  opacity: 0.85;
+}
+
+.stop-item.completed .stop-address {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.stop-item.failed {
+  border-left: 4px solid var(--accent-crimson) !important;
+  background: rgba(239, 68, 68, 0.05);
+  opacity: 0.85;
+}
+
+.stop-item.failed .stop-address {
+  color: var(--text-muted);
+}
+
+/* ==========================================================================
+   FULLSCREEN MAP ENHANCEMENTS
+   ========================================================================== */
+.map-container-wrapper.fullscreen,
+#planera-map-wrapper.fullscreen,
+#korlage-map-wrapper.fullscreen {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  height: 100vh !important;
+  width: 100vw !important;
+  z-index: 9999 !important;
+  border-radius: 0 !important;
+  margin: 0 !important;
+  border: none !important;
+}
+
+/* Fullscreen floating button styling overlayed top right of map wrapper */
+.btn-map-fullscreen {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 44px;
+  height: 44px;
+  background: var(--bg-glass);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-main);
+  z-index: 10000 !important; /* Above Leaflet controls and tile layers */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-md);
+  padding: 0;
+  cursor: pointer;
+  transition: all var(--transition-fast) ease;
+}
+
+.btn-map-fullscreen:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--border-focus);
+  color: var(--accent-blue);
+  box-shadow: var(--shadow-blue-glow);
+}
+
+.btn-map-fullscreen:active {
+  transform: scale(0.92);
+}
+
+/* Toggle SVG visibility inside fullscreen mode */
+.map-container-wrapper.fullscreen .btn-map-fullscreen .icon-expand {
+  display: none !important;
+}
+
+.map-container-wrapper.fullscreen .btn-map-fullscreen .icon-shrink {
+  display: block !important;
+}
+
+/* ==========================================================================
+   AUTOCOMPLETE & COMMENT ENHANCEMENTS
+   ========================================================================== */
+/* Autocomplete dropdown list styling */
+.suggestions-dropdown {
+  position: absolute;
+  top: 50px;
+  left: 0;
+  right: 110px; /* Align with input width, leaving room for action button */
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 999;
+  box-shadow: var(--shadow-lg);
+}
+
+.suggestions-dropdown.hidden {
+  display: none !important;
+}
+
+.suggestion-item {
+  padding: 10px 14px;
+  font-size: 0.88rem;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-main);
+  text-align: left;
+  transition: background var(--transition-fast) ease;
+}
+
+.suggestion-item:last-child {
+  border-bottom: none;
+}
+
+.suggestion-item:hover, .suggestion-item.active {
+  background: var(--bg-tertiary);
+  color: var(--accent-blue);
+}
+
+/* Warnings and highlights for non-geocoded stops */
+.stop-item.not-geocoded {
+  border-left: 4px solid var(--accent-orange) !important;
+  background: rgba(245, 158, 11, 0.05);
+}
+
+.badge-not-geocoded {
+  font-size: 0.65rem;
+  font-weight: 700;
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--accent-orange);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-left: 6px;
+  display: inline-block;
+}
+
+/* Comments styling inside cards */
+.stop-comment-text {
+  font-size: 0.75rem;
+  color: var(--accent-orange);
+  margin-top: 6px;
+  background: rgba(245, 158, 11, 0.05);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border-left: 2px solid var(--accent-orange);
+  line-height: 1.3;
+}
+
+.active-comment-box {
+  font-size: 0.9rem;
+  color: var(--accent-orange);
+  margin-top: 10px;
+  background: rgba(245, 158, 11, 0.08);
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--accent-orange);
+  line-height: 1.4;
+  text-align: left;
+}
+
+/* Right alignment for comment action buttons next to delete buttons */
+.stop-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.stop-comment-btn {
+  background: transparent;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast) ease;
+}
+
+.stop-comment-btn:hover {
+  background: rgba(59, 130, 246, 0.15);
+  color: var(--accent-blue);
+}
+
+.btn-active-comment {
+  background: rgba(59, 130, 246, 0.1) !important;
+  border: 1px solid var(--accent-blue) !important;
+  color: var(--accent-blue) !important;
+  height: 48px !important;
+}
+
+.btn-active-comment:hover {
+  background: rgba(59, 130, 246, 0.2) !important;
+}
+
+

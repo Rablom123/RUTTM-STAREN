@@ -1,78 +1,71 @@
-const CACHE_NAME = 'ruttplaneraren-v22';
-const ASSETS_TO_CACHE = [
-  './',
-  './index.html',
-  './styles.css',
-  './app.js',
-  './manifest.json',
-  './assets/icon.svg',
-  './assets/icon-192.png',
-  './assets/icon-512.png'
+const CACHE_NAME = "ruttplaneraren-v9";
+const ASSETS = [
+  "./",
+  "./index.html",
+  "./app.css",
+  "./app.js",
+  "./manifest.json",
+  "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css",
+  "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js",
+  "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap"
 ];
 
-// Install Event - cache essential assets
-self.addEventListener('install', (e) => {
+// Install Event
+self.addEventListener("install", (e) => {
+  self.skipWaiting(); // Force waiting service worker to active state immediately
   e.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      console.log('[Service Worker] Caching app shell');
-      return cache.addAll(ASSETS_TO_CACHE);
-    }).then(() => self.skipWaiting())
+      console.log("[Service Worker] Caching App Shell");
+      return cache.addAll(ASSETS);
+    })
   );
 });
 
-// Activate Event - clean up old caches
-self.addEventListener('activate', (e) => {
+// Activate Event
+self.addEventListener("activate", (e) => {
+  self.clients.claim(); // Immediately claim all open pages so they use the new SW without reloads
   e.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
         keys.map((key) => {
           if (key !== CACHE_NAME) {
-            console.log('[Service Worker] Removing old cache', key);
+            console.log("[Service Worker] Removing old cache", key);
             return caches.delete(key);
           }
         })
       );
-    }).then(() => self.clients.claim())
+    })
   );
 });
 
-// Fetch Event - network first, cache fallback for dynamically fetched or static assets
-self.addEventListener('fetch', (e) => {
-  if (e.request.method !== 'GET' || !e.request.url.startsWith(self.location.origin)) {
-    return;
-  }
+// Fetch Event
+self.addEventListener("fetch", (e) => {
+  // Only handle standard HTTP/S requests
+  if (!e.request.url.startsWith("http")) return;
 
   e.respondWith(
     caches.match(e.request).then((cachedResponse) => {
       if (cachedResponse) {
-        // Fetch in background to update cache (stale-while-revalidate)
-        fetch(e.request).then((networkResponse) => {
-          if (networkResponse.status === 200) {
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(e.request, networkResponse);
-            });
-          }
-        }).catch(() => {/* Ignore network errors offline */});
-        
         return cachedResponse;
       }
       
+      // Fallback to network
       return fetch(e.request).then((networkResponse) => {
-        if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
-          return networkResponse;
+        // Cache external assets if they are fonts or Leaflet packages
+        if (
+          e.request.url.includes("unpkg.com") ||
+          e.request.url.includes("googleapis") ||
+          e.request.url.includes("gstatic")
+        ) {
+          return caches.open(CACHE_NAME).then((cache) => {
+            cache.put(e.request, networkResponse.clone());
+            return networkResponse;
+          });
         }
-        
-        const responseToCache = networkResponse.clone();
-        caches.open(CACHE_NAME).then((cache) => {
-          cache.put(e.request, responseToCache);
-        });
-        
         return networkResponse;
       }).catch(() => {
-        // Fallback for offline if HTML is requested
-        if (e.request.headers.get('accept').includes('text/html')) {
-          return caches.match('./index.html');
-        }
+        // Gracefully fail if offline and not cached
+        console.log("[Service Worker] Fetch failed, resource not cached:", e.request.url);
       });
     })
   );
